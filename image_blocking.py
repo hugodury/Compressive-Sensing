@@ -132,7 +132,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--image",
-        default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "Projet", "lena.jpg"),
+        default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "lena.jpg"),
         help="Fichier image",
     )
     groupe = parser.add_mutually_exclusive_group(required=False)
