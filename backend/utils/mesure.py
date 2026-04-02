@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from image_blocking import image_to_patch_vectors, load_grayscale_matrix
+from Traitement_Image.py import image_to_patch_vectors, load_grayscale_matrix
 
 _MODES_VALIDES = frozenset(
     {
