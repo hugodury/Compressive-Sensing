@@ -7,7 +7,16 @@ import numpy as np
 
 from image_blocking import image_to_patch_vectors, load_grayscale_matrix
 
-_MODES_VALIDES = frozenset({"gaussian", "bernoulli"})
+_MODES_VALIDES = frozenset(
+    {
+        "uniform",
+        "bernoulli_pm1",
+        "bernoulli_01",
+        "gaussian",
+        # compat
+        "bernoulli",
+    }
+)
 
 
 def generate_measurement_matrix(
@@ -15,10 +24,19 @@ def generate_measurement_matrix(
     N: int,
     mode: str,
     *,
+    p: float = 0.5,
     seed: int | None = None,
 ) -> np.ndarray:
     """
-    Génère Φ ∈ R^{M×N} (gaussienne ou bernoulli), comme dans fonction.md.
+    Génère Φ ∈ R^{M×N}.
+
+    Modes supportés :
+    - uniform : matrice aléatoire uniforme (U[0,1]).
+    - bernoulli_pm1 : bernoulli {−1, 1} avec P(X=-1)=p et P(X=1)=1-p.
+      (Si rand()<p alors X=-1 sinon X=1).
+    - bernoulli_01 : bernoulli {0, 1}.
+    - gaussian : gaussienne i.i.d N(0, 1/M).
+
     `seed` optionnel : reproductibilité (non listé dans le stub du .md).
     """
 
@@ -38,14 +56,25 @@ def generate_measurement_matrix(
         raise ValueError(f"mode doit être parmi {sorted(_MODES_VALIDES)}, reçu : {mode!r}.")
 
     rng = np.random.default_rng(seed)
+    scale = 1.0 / np.sqrt(M)
+
     if mode_norm == "gaussian":
-        phi = rng.standard_normal(size=(M, N), dtype=np.float64) / np.sqrt(M) #matrice gaussienne
-        return phi
+        # i.i.d N(0, 1/M)
+        return rng.standard_normal(size=(M, N), dtype=np.float64) * scale
 
+    if mode_norm == "uniform":
+        return rng.uniform(0.0, 1.0, size=(M, N)).astype(np.float64, copy=False) * scale
 
-    signes = rng.integers(0, 2, size=(M, N), dtype=np.int8)
-    phi = (2.0 * signes - 1.0) / np.sqrt(M) #matrice bernoulli
-    return phi.astype(np.float64, copy=False)
+    if mode_norm in {"bernoulli_pm1", "bernoulli"}:
+        if not (0.0 <= p <= 1.0):
+            raise ValueError("p doit être dans [0, 1].")
+        u = rng.random(size=(M, N))
+        phi = np.where(u < p, -1.0, 1.0)
+        return (phi * scale).astype(np.float64, copy=False)
+
+    # bernoulli_01
+    bits = rng.integers(0, 2, size=(M, N), dtype=np.int8)
+    return bits.astype(np.float64, copy=False) * scale
 
 
 def apply_measurement(Phi: np.ndarray, x: np.ndarray) -> np.ndarray:
