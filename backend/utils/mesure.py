@@ -98,7 +98,7 @@ def compute_ratio(ratio: float, N: int) -> float:
     if N < 1:
         raise ValueError("N doit être >= 1.")
     
-    M = ratio*N
+    M = (ratio*N)/100
 
     # Calcul
     return M
