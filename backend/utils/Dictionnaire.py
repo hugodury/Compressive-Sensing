@@ -4,7 +4,7 @@ Gestion des dictionnaires.
 import numpy as np
 
 """Fonction crétion d'un dictionnaire par DCT"""
-def dictionaryDCT(N):
+def build_dct_dictionary(N: int):
     k = np.arange(N).reshape(N, 1) # Colonne de 0 à N-1
     n = np.arange(N).reshape(1, N) # Ligne de 0 à N-1
 
@@ -33,7 +33,7 @@ def initRandDictionaryDCT(matrice_patch, K):
     (N, Nb) = matrice_patch.shape
     
     #On génère la base DCT
-    DCT = dictionaryDCT(N)
+    DCT = build_dct_dictionary(N)
     
     #Si le dictionnaire demandé est plus petit ou égal à la base DCT, on tronque la DCT
     if K <= N:
@@ -54,7 +54,7 @@ def initRandDictionaryDCT(matrice_patch, K):
 
 """Ajustement du dictionnaire (K-SVD)
     Met à jour les atomes de D et les coefficients de A de manière itérative"""
-def dictionnaireKSVD(X, A, D):
+def learn_ksvd_dictionary(X, A, D):
     # On récupère K dynamiquement pour que la fonction soit générique
     K = D.shape[1] 
     
