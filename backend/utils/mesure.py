@@ -89,7 +89,7 @@ def apply_measurement(Phi: np.ndarray, x: np.ndarray) -> np.ndarray:
     raise ValueError("x doit être un vecteur (N,) ou une matrice (N, K).")
 
 
-def compute_ratio(M: int, N: int) -> float:
+def compute_ratio(ratio: float, N: int) -> float: #ratio ex : 75 pour 75%
     """r = M / N."""
     if N < 1:
         raise ValueError("N doit être >= 1.")
