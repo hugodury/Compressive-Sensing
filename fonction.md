@@ -434,3 +434,14 @@ def choose_parameters() -> dict:
 * Afficher des graphes et comparaisons,
 * Visualiser les étapes du procédé de compressive sensing.
 
+
+#Affichage
+- Image decoupée
+- Different matrice de mesure
+- Tableau de la cohérence mutuelle
+- Different  méthode
+- Different dico
+- Graphique chaque algo en fonction de l'erreur MSE...
+- Tableau comparer dico
+- Diagramme parcimonie
+- Resultat apres reconstruction
