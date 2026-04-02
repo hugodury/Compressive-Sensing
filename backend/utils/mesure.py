@@ -140,3 +140,18 @@ def compute_coherence(Phi: np.ndarray, D: np.ndarray) -> float:
     np.fill_diagonal(G, 0.0)
     return float(np.max(np.abs(G)))
 
+
+def main(
+    ratio: float,
+    N: int,
+    mode: str,
+    seed: int | None,
+    xi: np.ndarray,
+) -> np.ndarray:
+    """
+    Crée la matrice de mesure Phi avec (ratio, N, mode, seed),
+    applique y = Phi x aux patchs vectorisés xi, et renvoie yi.
+    """
+    Phi = generate_measurement_matrix(ratio=ratio, N=N, mode=mode, seed=seed)
+    yi = apply_measurement(Phi, xi)
+    return yi
