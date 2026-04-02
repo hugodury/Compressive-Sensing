@@ -214,9 +214,53 @@ def cosamp(
     return alpha
 
 
-# Alias “mêmes noms que les scripts d'origine” (optionnel, mais pratique)
-MP = mp
-OMP = omp
-StOMP = stomp
-CoSaMP = cosamp
 
+def main_methode(
+    patches: list[np.ndarray],
+    Phi: np.ndarray,
+    D: np.ndarray,
+    methodes: str | list[str],
+    method_params: dict[str, dict] | None = None,
+) -> dict:
+    if isinstance(methodes, str):
+        methodes = [methodes]
+
+    method_params = method_params or {}
+    A = Phi @ D
+
+    mesures = []
+    alphas_by_method = {m.lower(): [] for m in methodes}
+    reconstructed_by_method = {m.lower(): [] for m in methodes}
+
+    for patch in patches:
+        x = vectoriser(patch)
+        y = apply_measurement(Phi, x)
+        mesures.append(y)
+
+        for methode in methodes:
+            nom = methode.lower()
+            params = method_params.get(nom, {})
+
+            if nom == "mp":
+                alpha = mp(A, y, **params)
+            elif nom == "omp":
+                alpha = omp(A, y, **params)
+            elif nom == "stomp":
+                alpha = stomp(A, y, **params)
+            elif nom == "cosamp":
+                alpha = cosamp(A, y, **params)
+            elif nom == "irls":
+                alpha = irls(A, y, **params)
+            else:
+                raise ValueError(f"Méthode inconnue : {methode}")
+
+            x_hat = D @ alpha
+
+            alphas_by_method[nom].append(alpha)
+            reconstructed_by_method[nom].append(x_hat)
+
+    return {
+        "mesures": mesures,
+        "alphas_by_method": alphas_by_method,
+        "reconstructed_by_method": reconstructed_by_method,
+    }
