@@ -5,16 +5,14 @@ from __future__ import annotations
 
 import numpy as np
 
-from backend.Tratement_Image import image_to_patch_vectors, load_grayscale_matrix
+from image_blocking import image_to_patch_vectors, load_grayscale_matrix
 
 _MODES_VALIDES = frozenset(
     {
         "uniform",
-        "bernoulli_pm1",
+        "bernoulli_1",
         "bernoulli_01",
         "gaussian",
-        # compat
-        "bernoulli",
     }
 )
 
@@ -28,16 +26,8 @@ def generate_measurement_matrix(
     seed: int | None = None,
 ) -> np.ndarray:
     """
-    Génère Φ ∈ R^{M×N}.
-
-    Modes supportés :
-    - uniform : matrice aléatoire uniforme (U[0,1]).
-    - bernoulli_pm1 : bernoulli {−1, 1} avec P(X=-1)=p et P(X=1)=1-p.
-      (Si rand()<p alors X=-1 sinon X=1).
-    - bernoulli_01 : bernoulli {0, 1}.
-    - gaussian : gaussienne i.i.d N(0, 1/M).
-
-    `seed` optionnel : reproductibilité (non listé dans le stub du .md).
+    Génère Φ ∈ R^{M×N} (gaussienne,bernouilli(0,1), bernouilli(-1,1)=1, uniforme)
+    `seed` optionnel : reproductibilité.
     """
 
     # Verfication des dims
@@ -59,14 +49,12 @@ def generate_measurement_matrix(
     scale = 1.0 / np.sqrt(M)
 
     if mode_norm == "gaussian":
-        # i.i.d N(0, 1/M)
-        return rng.standard_normal(size=(M, N), dtype=np.float64) * scale
+        return rng.standard_normal(size=(M, N), dtype=np.float64) * scale # gaussienne N(0,1)
 
     if mode_norm == "uniform":
-        return rng.uniform(0.0, 1.0, size=(M, N)).astype(np.float64, copy=False) * scale
+        return rng.uniform(0.0, 1.0, size=(M, N)).astype(np.float64, copy=False) * scale # uniforme [0,1]
 
-    if mode_norm in {"bernoulli_pm1", "bernoulli"}:
-        if not (0.0 <= p <= 1.0):
+    if mode_norm in {"bernoulli_1"}: # berouilli [-1,1]
             raise ValueError("p doit être dans [0, 1].")
         u = rng.random(size=(M, N))
         phi = np.where(u < p, -1.0, 1.0)
@@ -103,7 +91,7 @@ def apply_measurement(Phi: np.ndarray, x: np.ndarray) -> np.ndarray:
 
 def compute_ratio(M: int, N: int) -> float:
     """
-    Calcule le ratio r = M / N (nombre de mesures/ dimension du patch).
+    Calcule le ratio r = dM / N (nombre de mesures/ dimension du patch).
     """
     # Verfication des dims
     if N < 1:
@@ -147,7 +135,7 @@ def compute_coherence(Phi: np.ndarray, D: np.ndarray) -> float:
 
 
     norms = np.linalg.norm(A, axis=0, keepdims=True) #normalisation colonne par colonne
-    if np.any(norms < 1e-15):
+    if np.any(norms < 1e-15):d
         raise ValueError("Une colonne de ΦD est quasi nulle (norme nulle).")
     A_n = A / norms #normalisation colonne par colonne
 
