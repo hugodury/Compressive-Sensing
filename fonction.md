@@ -420,3 +420,17 @@ def choose_parameters() -> dict:
 * Graphiques de performance
 * Analyse critique des résultats
 
+
+# Frontend
+* Charger une image,
+* Choisir la taille de bloc B,
+* Choisir le pourcentage de mesures,
+* Choisir la matrice de mesure Φ1..Φ4,
+* Choisir la méthode de reconstruction MP / OMP / StOMP / CoSaMP / IRLS,
+* Choisir le dictionnaire DCT ou K-SVD,
+* Lancer la reconstruction,
+* Afficher l’image originale et l’image reconstruite,
+* Afficher les métriques et les temps,
+* Afficher des graphes et comparaisons,
+* Visualiser les étapes du procédé de compressive sensing.
+
