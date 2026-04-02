@@ -12,7 +12,7 @@ _MODES_VALIDES = frozenset({"gaussian", "uniform", "bernoulli_1", "bernoulli_01"
 
 
 def generate_measurement_matrix(
-    M: int,
+    ratio : float,
     N: int,
     mode: str,
     *,
@@ -28,10 +28,11 @@ def generate_measurement_matrix(
     - bernoulli_1 : {-1,+1} (probabilité p de -1) / sqrt(M)
     - bernoulli_01 : {0,1} / sqrt(M)
     """
-    if M < 1:
-        raise ValueError("M doit être un entier >= 1.")
     if N < 1:
         raise ValueError("N doit être un entier >= 1.")
+    M = compute_ratio(ratio, N)
+    if M < 1:
+        raise ValueError("M doit être un entier >= 1.")
     if M > N:
         raise ValueError("Pour une acquisition compressée, il faut M <= N.")
 
@@ -89,14 +90,26 @@ def apply_measurement(Phi: np.ndarray, x: np.ndarray) -> np.ndarray:
     raise ValueError("x doit être un vecteur (N,) ou une matrice (N, K).")
 
 
-def compute_ratio(ratio: float, N: int) -> float: #ratio ex : 75 pour 75%
-    """r = M / N."""
+def compute_ratio(ratio: float, N: int) -> int:
+    """
+    Convertit un ratio (fraction ou pourcentage) en nombre de mesures M.
+
+    - Si ratio <= 1 : interprété comme fraction (ex: 0.75)
+    - Si ratio  > 1 : interprété comme pourcentage (ex: 75)
+    """
     if N < 1:
         raise ValueError("N doit être >= 1.")
-    
-    M = (ratio*N)/100
+    r = float(ratio)
+    if r < 0.0:
+        raise ValueError("ratio doit être >= 0.")
 
-    # Calcul
+    if r <= 1.0:
+        M = int(np.ceil(r * N))
+    else:
+        if r > 100.0:
+            raise ValueError("ratio en pourcentage doit être dans [0, 100].")
+        M = int(np.ceil((r / 100.0) * N))
+
     return M
 
 
