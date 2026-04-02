@@ -88,3 +88,41 @@ def learn_ksvd_dictionary(X, A, D):
         A[i, w] = S[0] * Vt[0, :]
         
     return D
+
+
+"""Sauvegarde le dictionnaire."""
+#Exemple de noms :  dct_50.csv
+def save_dictionary(D: np.ndarray,name: str) :
+    path = "Data/Dictionnaire/"+name
+    # Si on souhaite save dans un csv ou txt
+    if path.endswith('.csv') or path.endswith('.txt'):
+        np.savetxt(path, D, delimiter=',')
+        print(f"Dictionnaire sauvegardé en format texte sous : {path}")
+        
+    # Sinon, on utilise le format binaire natif de NumPy (.npy) par défaut
+    else:
+        np.save(path, D)
+        if not path.endswith('.npy'):
+            path += '.npy'
+    
+        print(f"Dictionnaire sauvegardé sous : {path}")
+        
+    return 0
+
+"""Charge un dictionnaire existant."""
+def load_dictionary(name: str) -> np.ndarray:
+    path = "Data/Dictionnaire/"+name
+    # Si le fichier est au format csv ou txt
+    if path.endswith('.csv') or path.endswith('.txt'):
+        D = np.loadtxt(path, delimiter=',')
+        print(f"Dictionnaire texte chargé depuis : {path}")
+        
+    else:
+        if not path.endswith('.npy'):
+            path += '.npy'
+            
+        D = np.load(path)
+        print(f"Dictionnaire binaire chargé depuis : {path}")
+        
+    return D
+
