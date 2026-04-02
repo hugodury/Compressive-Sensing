@@ -12,15 +12,15 @@ pip install numpy pillow
 
 ## script
 
-`image_blocking.py` : charge une image, découpe en blocs B×B, sort une matrice avec une colonne = un patch aplati.
+`backend/image_blocking.py` : charge une image, découpe en blocs B×B, sort une matrice avec une colonne = un patch aplati.
 
-Par défaut ça prend `lena.jpg` à côté du script.
+Par défaut ça prend `lena.jpg` à la racine du dépôt.
 
 ```bash
-python3 image_blocking.py
-python3 image_blocking.py -B 16
-python3 image_blocking.py --grille 32 32
-python3 image_blocking.py --image autre_fichier.png
+python3 backend/image_blocking.py
+python3 backend/image_blocking.py -B 16
+python3 backend/image_blocking.py --grille 32 32
+python3 backend/image_blocking.py --image autre_fichier.png
 ```
 
 Le reste du projet arrive plus tard.

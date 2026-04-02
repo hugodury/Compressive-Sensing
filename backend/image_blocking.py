@@ -132,7 +132,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--image",
-        default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "lena.jpg"),
+        # Par défaut, on va chercher `lena.jpg` à la racine du dépôt,
+        # puisque ce fichier a été déplacé dans `backend/`.
+        default=os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "..",
+            "lena.jpg",
+        ),
         help="Fichier image",
     )
     groupe = parser.add_mutually_exclusive_group(required=False)
