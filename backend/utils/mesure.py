@@ -12,13 +12,12 @@ _MODES_VALIDES = frozenset(
         "uniform",
         "bernoulli_1",
         "bernoulli_01",
-        "gaussian",
-    }
+        "gaussian",}
 )
 
 
 def generate_measurement_matrix(
-    M: int,
+    ratio : float
     N: int,
     mode: str,
     *,
@@ -26,11 +25,13 @@ def generate_measurement_matrix(
     seed: int | None = None,
 ) -> np.ndarray:
     """
-    Génère Φ ∈ R^{M×N} (gaussienne,bernouilli(0,1), bernouilli(-1,1)=1, uniforme)
+    Génère Φ ∈ R^{M×N} (gaussienne,bernouilli(0,1), bernouilli(-1,1)=1, uniforme) avec M determiner par compute ratio
     `seed` optionnel : reproductibilité.
     """
 
     # Verfication des dims
+
+    M = compute_ratio(ratio, N)
 
     if M < 1:
         raise ValueError("M doit être un entier >= 1.")
@@ -89,18 +90,18 @@ def apply_measurement(Phi: np.ndarray, x: np.ndarray) -> np.ndarray:
     raise ValueError("x doit être de dim 1 vecteur ou 2 (matrice N*K).")
 
 
-def compute_ratio(M: int, N: int) -> float:
+def compute_ratio(ratio: float, N: int) -> float:
     """
-    Calcule le ratio r = dM / N (nombre de mesures/ dimension du patch).
+    Renvoie la taille M
     """
     # Verfication des dims
     if N < 1:
         raise ValueError("N doit être >= 1.")
-    if M < 0:
-        raise ValueError("M doit être >= 0.")
+    
+    M = ratio*N
 
     # Calcul
-    return float(M) / float(N)
+    return M
 
 
 def compute_coherence(Phi: np.ndarray, D: np.ndarray) -> float:
