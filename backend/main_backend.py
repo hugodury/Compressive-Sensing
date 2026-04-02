@@ -4,74 +4,96 @@ Point d'entrée du backend.
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
-from Tratement_Image import main_patch, main_reconstruct_patch
-from utils.Dictionnaire import main_dictionnaire
-from utils.Methode import main_methode
-from utils.Metrics import main_metrics
-from utils.Save import main_save
-from utils.mesure import main_mesure
+from backend.Tratement_Image import patch
+from backend.utils.Metrics import compute_all_metrics
 
 
 def main_backend(params: dict[str, Any]) -> dict[str, Any]:
-    patch_data = main_patch(
+    patch_params = params.get("patch_params") or {}
+    patch_B = patch_params.get("B", params["B"])
+    patch_nrows = patch_params.get("nrows")
+    patch_ncols = patch_params.get("ncols")
+    patch_order = patch_params.get("order", "C")
+    patch_max_patches = patch_params.get("max_patches")
+    patch_ratio = patch_params.get("ratio", params.get("ratio"))
+    patch_mode_phi = patch_params.get("mode_phi", params.get("measurement_mode", "gaussian"))
+    patch_seed = patch_params.get("seed", params.get("seed"))
+
+    # 1) Découpage seul (référence de base + image originale recadrée)
+    base = patch(
         image_path=params["image_path"],
-        B=params["B"],
+        B=patch_B,
+        nrows=patch_nrows,
+        ncols=patch_ncols,
+        order=patch_order,
+        as_dict=True,
     )
+    original = base["matrice_patchs"]  # (N, NB), utile pour diagnostics
 
-    dictionnaire_data = main_dictionnaire(
-        patches=patch_data["patches"],
-        dictionary_type=params["dictionary_type"],
-        n_atoms=params["n_atoms"],
-        n_iter=params["n_iter_ksvd"],
-        B=params["B"],
-    )
+    # Image originale (recadrée) pour les métriques
+    from backend.Tratement_Image import load_grayscale_matrix  # import local pour éviter effets de bord
 
-    mesure_data = main_mesure(
-        patches=patch_data["patches"],
-        D=dictionnaire_data["D"],
-        M=params["M"],
-        N=params["N"],
-        mode=params["measurement_mode"],
-        seed=params.get("seed"),
-    )
+    image_full = load_grayscale_matrix(params["image_path"])
+    n1, n2, _, _ = base["meta"]
+    image_originale = image_full[:n1, :n2]
 
-    methode_data = main_methode(
-        patches=mesure_data["mesures"],
-        A=mesure_data["A"],
-        methodes=params["methodes"],
-        method_params=params.get("method_params"),
-    )
+    methodes = params["methodes"]
+    if isinstance(methodes, str):
+        methodes = [methodes]
+    method_params = params.get("method_params") or {}
 
-    reconstruct_data = main_reconstruct_patch(
-        alphas_by_method=methode_data["alphas_by_method"],
-        D=dictionnaire_data["D"],
-        image_shape=patch_data["image_shape"],
-        B=params["B"],
-        patch_meta=patch_data.get("patch_meta"),
-    )
+    images_by_method: dict[str, Any] = {}
+    metrics_by_method: dict[str, Any] = {}
 
-    metrics_data = main_metrics(
-        original=patch_data["image"],
-        reconstructed_by_method=reconstruct_data["images_by_method"],
-    )
+    # 2) Reconstruction pour chaque méthode demandée
+    for methode in methodes:
+        nom = str(methode).lower()
+        mparams = method_params.get(nom, {})
 
-    save_data = main_save(
-        output_path=params["output_path"],
-        original=patch_data["image"],
-        reconstructed_by_method=reconstruct_data["images_by_method"],
-        metrics_by_method=metrics_data,
-        params=params,
-    )
+        t0 = time.perf_counter()
+        out = patch(
+            image_path=params["image_path"],
+            B=patch_B,
+            nrows=patch_nrows,
+            ncols=patch_ncols,
+            order=patch_order,
+            as_dict=True,
+            M=patch_params.get("M"),
+            ratio=patch_ratio,
+            method=nom,
+            dictionary_type=params.get("dictionary_type", "dct"),
+            n_atoms=params.get("n_atoms"),
+            mode_phi=patch_mode_phi,
+            seed=patch_seed,
+            max_iter=mparams.get("max_iter", 20),
+            epsilon=mparams.get("epsilon", 1e-6),
+            t_stomp=mparams.get("t", 2.5),
+            s_cosamp=mparams.get("s", 6),
+            max_patches=patch_max_patches,
+        )
+        t1 = time.perf_counter()
+
+        reconstructed = out["image_reconstruite"]
+        images_by_method[nom] = reconstructed
+
+        # On ne dispose pas encore d'un alpha "global" exposé par patch(),
+        # donc on calcule les métriques image + temps ici.
+        metrics = compute_all_metrics(
+            image_originale,
+            reconstructed,
+            start=t0,
+            end=t1,
+        )
+        metrics_by_method[nom] = metrics
 
     return {
         "params": params,
-        "patch": patch_data,
-        "dictionnaire": dictionnaire_data,
-        "mesure": mesure_data,
-        "methode": methode_data,
-        "reconstruction": reconstruct_data,
-        "metrics": metrics_data,
-        "save": save_data,
+        "patch": base,
+        "original": image_originale,
+        "images_by_method": images_by_method,
+        "metrics": metrics_by_method,
+        "n_patches": int(original.shape[1]),
     }

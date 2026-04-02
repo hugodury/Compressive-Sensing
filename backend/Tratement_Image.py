@@ -184,7 +184,7 @@ def patch(
     # --- Reconstruction (decoder BCS) ---
     # Import local pour éviter les imports circulaires.
     from backend.utils.mesure import generate_measurement_matrix, apply_measurement
-    from backend.utils.Methode import mp, omp, stomp, cosamp, irls
+    from backend.utils.Methode import mp, omp, stomp, cosamp
     from backend.utils.Dictionnaire import build_dct_dictionary
 
     N, NB = matrice_patchs.shape
@@ -234,10 +234,8 @@ def patch(
         solver = stomp
     elif method_norm == "cosamp":
         solver = cosamp
-    elif method_norm == "irls":
-        solver = irls
     else:
-        raise ValueError("method doit être parmi : mp, omp, stomp, cosamp, irls.")
+        raise ValueError("method doit être parmi : mp, omp, stomp, cosamp.")
 
     for idx in range(NB_used):
         yj = y[:, idx]
@@ -246,8 +244,6 @@ def patch(
             alpha = solver(A, yj, max_iter=max_iter, eps=epsilon, t=t_stomp)
         elif method_norm == "cosamp":
             alpha = solver(A, yj, max_iter=max_iter, epsilon=epsilon, s=s_cosamp)
-        elif method_norm == "irls":
-            alpha = solver(A, yj, max_iter=max_iter, epsilon=epsilon)
         else:
             alpha = solver(A, yj, max_iter=max_iter, epsilon=epsilon)
 

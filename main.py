@@ -21,6 +21,7 @@ def setupParam(
     n_atoms: int | None = None,
     n_iter_ksvd: int = 10,
     method_params: dict[str, dict[str, Any]] | None = None,
+    patch_params: dict[str, Any] | None = None,
     seed: int | None = None,
 ) -> dict[str, Any]:
     if block_size <= 0:
@@ -50,6 +51,7 @@ def setupParam(
         "n_atoms": n_atoms,
         "n_iter_ksvd": n_iter_ksvd,
         "method_params": method_params or {},
+        "patch_params": patch_params or {},
         "seed": seed,
     }
 
@@ -65,6 +67,7 @@ def main(
     n_atoms: int | None = None,
     n_iter_ksvd: int = 10,
     method_params: dict[str, dict[str, Any]] | None = None,
+    patch_params: dict[str, Any] | None = None,
     seed: int | None = None,
 ) -> dict[str, Any]:
     params = setupParam(
@@ -78,6 +81,7 @@ def main(
         n_atoms=n_atoms,
         n_iter_ksvd=n_iter_ksvd,
         method_params=method_params,
+        patch_params=patch_params,
         seed=seed,
     )
     return main_backend(params)
