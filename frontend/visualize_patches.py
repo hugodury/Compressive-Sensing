@@ -12,12 +12,20 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
+from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
-# Import local : comme ce fichier est dans `backend/`, on importe directement Tratement_Image.
-from Tratement_Image import image_to_patch_vectors, load_grayscale_matrix
+# Permet d'importer le package backend quand on lance:
+# `python3 frontend/visualize_patches.py`
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+# Le script est côté frontend, mais le traitement image reste dans le backend.
+from backend.Tratement_Image import image_to_patch_vectors, load_grayscale_matrix
 
 
 def _save_grayscale(path: str, X: np.ndarray) -> None:
