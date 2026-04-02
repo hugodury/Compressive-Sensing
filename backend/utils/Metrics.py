@@ -9,6 +9,36 @@ from typing import Any, Dict, Optional
 import numpy as np
 
 
+def _validate_same_shape(original: np.ndarray, reconstructed: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Vérifie que `original` et `reconstructed` ont la même forme puis convertit en float.
+    """
+    original_arr = np.asarray(original)
+    reconstructed_arr = np.asarray(reconstructed)
+    if original_arr.shape != reconstructed_arr.shape:
+        raise ValueError(
+            f"Les formes ne correspondent pas : original={original_arr.shape}, reconstruit={reconstructed_arr.shape}."
+        )
+    return original_arr.astype(np.float64, copy=False), reconstructed_arr.astype(np.float64, copy=False)
+
+
+def _infer_peak_value(original_arr: np.ndarray, reconstructed_arr: np.ndarray) -> float:
+    """
+    Valeur de pic utilisée pour PSNR.
+
+    - Si les tableaux ressemblent à des images uint8 : peak = 255
+    - Sinon : peak = max(|valeurs|) sur original et reconstruit
+    """
+    if np.issubdtype(original_arr.dtype, np.integer) or np.issubdtype(reconstructed_arr.dtype, np.integer):
+        # Cas typique images 8 bits
+        if original_arr.dtype == np.uint8 or reconstructed_arr.dtype == np.uint8:
+            return 255.0
+        # Sinon on prend la borne “pratique” via max
+    peak = float(np.max(np.abs(original_arr)))
+    peak = max(peak, float(np.max(np.abs(reconstructed_arr))))
+    return peak
+
+
 def compute_mse(original: np.ndarray, reconstructed: np.ndarray) -> float:
     """
     Calcule l'erreur quadratique moyenne (Mean Squared Error).
@@ -130,7 +160,34 @@ def compute_execution_time(start: float,end: float) -> float:
     return execution_time
 
 
-def compute_all_metrics(original: np.ndarray, reconstructed: np.ndarray, start: Optional[float] = None, end: Optional[float] = None) -> Dict[str, Any]:
+def compute_parcimony(alpha: np.ndarray, *, eps: float = 1e-8) -> Dict[str, float]:
+    """
+    Mesure la parcimonie à partir des coefficients `alpha`.
+
+    On renvoie :
+    - `l0_approx` : nombre de coefficients dont |alpha_i| > eps
+    - `sparsity_ratio` : l0_approx / nombre total de coefficients
+    """
+    a = np.asarray(alpha, dtype=np.float64).ravel()
+    if a.size == 0:
+        return {"l0_approx": 0.0, "sparsity_ratio": 0.0}
+
+    nz = int(np.sum(np.abs(a) > float(eps)))
+    return {
+        "l0_approx": float(nz),
+        "sparsity_ratio": float(nz) / float(a.size),
+    }
+
+
+def compute_all_metrics(
+    original: np.ndarray,
+    reconstructed: np.ndarray,
+    start: Optional[float] = None,
+    end: Optional[float] = None,
+    *,
+    alpha: Optional[np.ndarray] = None,
+    alpha_eps: float = 1e-8,
+) -> Dict[str, Any]:
     """
     Calcule toutes les métriques utiles du projet.
 
@@ -156,5 +213,9 @@ def compute_all_metrics(original: np.ndarray, reconstructed: np.ndarray, start: 
         "relative_error": compute_relative_error(original, reconstructed),
         "execution_time": compute_execution_time(start, end)
     }
+
+    # Ajout optionnel : parcimonie à partir de `alpha` (si disponible).
+    if alpha is not None:
+        metrics.update(compute_parcimony(alpha, eps=alpha_eps))
 
     return metrics
