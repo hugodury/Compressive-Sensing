@@ -285,10 +285,29 @@ def build_dct_dictionary(
     Génère un dictionnaire DCT.
     """
 
+def initRandDictionary(
+    matrice_patch : np.ndarray,
+    K : int
+) -> np.ndarray:
+    """
+    Fonction d'initialisation dictionnaire par choix alea de K vecteurs
+    On appliquera ensuite le K-SVD
+    """
+
+def initRandDictionaryDCT(
+    matrice_patch : np.ndarray, 
+    K : int
+) -> np.ndarray:
+    """
+    Fonction d'initialisation dictionnaire par choix alea de K vecteurs + DCT
+    On appliquera ensuite le K-SVD
+    """
+
+
 def learn_ksvd_dictionary(
-    patches: np.ndarray,
-    n_atoms: int,
-    n_iter: int
+    X: np.ndarray,
+    A: np.ndarray,
+    D: np.array,
 ) -> np.ndarray:
     """
     Apprend un dictionnaire via K-SVD.
