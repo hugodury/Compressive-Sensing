@@ -44,6 +44,44 @@ def init_dictionnaire_mixte_dct_patches(matrice_patch: np.ndarray, K: int) -> np
     return np.hstack((partie_dct, partie_p))
 
 
+def estime_ordre_parcimonie_cosamp(
+    matrice_patchs: np.ndarray,
+    D: np.ndarray,
+    *,
+    max_iter_omp: int = 32,
+    epsilon: float = 1e-3,
+    max_echantillons: int = 64,
+    seed: int | None = None,
+) -> int:
+    """
+    Propose un ordre s pour CoSaMP à partir d’un codage OMP sur les patchs (même idée
+    que l’étape « sparse coding » du K-SVD : on regarde combien de coefficients sont
+    activement utilisés par patch, puis on prend une valeur centrale (médiane arrondie).
+    """
+    from backend.utils.Methode import omp
+
+    N, L = matrice_patchs.shape
+    K = D.shape[1]
+    rng = np.random.default_rng(seed)
+    nb = min(max_echantillons, L)
+    if nb < 1:
+        return max(1, min(6, K))
+    if L <= nb:
+        indices = np.arange(L, dtype=int)
+    else:
+        indices = rng.choice(L, size=nb, replace=False)
+
+    nnz_par_patch: list[int] = []
+    for j in indices:
+        xj = matrice_patchs[:, j]
+        alpha = omp(D, xj, max_iter=max_iter_omp, epsilon=epsilon)
+        nnz_par_patch.append(int(np.sum(np.abs(alpha) > epsilon)))
+
+    s = int(np.ceil(float(np.median(nnz_par_patch))))
+    s = max(1, min(s, K))
+    return s
+
+
 """Fonction d'initialisation dictionnaire par choix alea de K vecteurs
     On appliquera ensuite le K-SVD """
 def initRandDictionary(matrice_patch, K):

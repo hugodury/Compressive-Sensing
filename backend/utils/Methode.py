@@ -2,8 +2,8 @@
 Méthodes parcimonieuses et relaxations convexes pour le problème y ≈ A α
 (avec A = Φ D en compressive sensing sur les patchs).
 
-On regroupe : MP, OMP, StOMP, CoSaMP, IRLS (régression pondérée itérée),
-Basis Pursuit / LP (même formulation linéaire), LASSO via ISTA.
+On regroupe : MP, OMP, StOMP, CoSaMP, **IRLS** (pseudo-norme ℓp, 0<p<1, §5.2 du sujet),
+Basis Pursuit / LP (relaxation **L1** convexe), LASSO via ISTA.
 Les critères d’arrêt classiques (résidu, max itérations) peuvent être complétés
 par un PSNR cible si on fournit le patch original (cas expérimental / debug).
 """
@@ -53,8 +53,9 @@ def mp(
     Matching Pursuit (MP).
 
     D : matrice (souvent A = ΦD), x : mesures y.
-    Si reference_for_psnr, D_recon et psnr_target_db sont fournis, on peut
-    arrêter dès que le PSNR (entre patch vrai et D_recon @ α) dépasse le seuil.
+    Différence clé vs OMP / StOMP : un seul atome par tour ; pas de moindres carrés
+    sur tout le support (étapes 2–3 = coeff. 1D puis résiduel non réorthogonalisé au sous-espace).
+    PSNR d’arrêt optionnel si reference_for_psnr + D_recon + seuil.
     """
     _ = kwargs
     D = np.asarray(D, dtype=np.float64)
@@ -78,7 +79,10 @@ def mp(
             break
 
         zmk = float((dj.T @ residuel) / dj_norm2)
+        # MP : étape 2 = coeff. le long d’un seul atome (pas de MC sur tout le support).
         alpha[mk] += zmk
+        # MP : étape 3 = on retranche seulement cette contribution ; le résiduel n’est
+        # pas rendu orthogonal à tout le sous-espace (contrairement à OMP).
         residuel = residuel - zmk * dj
 
         if _psnr_stop(reference_for_psnr, D_recon, alpha, psnr_target_db):
@@ -99,7 +103,10 @@ def omp(
     psnr_target_db: float | None = None,
     **kwargs: object,
 ) -> np.ndarray:
-    """Orthogonal Matching Pursuit (OMP)."""
+    """
+    OMP : un atome par tour, mais à chaque fois moindres carrés sur **tout** le support courant
+    (résiduel orthogonal à Vect(D_P)) — plus coûteux que MP, meilleure qualité en général.
+    """
     _ = kwargs
     D = np.asarray(D, dtype=np.float64)
     x = np.asarray(x, dtype=np.float64)
@@ -122,6 +129,9 @@ def omp(
         P.append(mk)
         Dk = D[:, P]
 
+        # OMP : étape 2–3 = moindres carrés sur **tout** le support P (tous les atomes
+        # choisis), donc résiduel orthogonal au sous-espace Vect(D_P) ; pas seulement
+        # une mise à jour scalaire comme en MP.
         alpha_k, *_ = np.linalg.lstsq(Dk, x, rcond=None)
         residuel = x - Dk @ alpha_k
 
@@ -149,7 +159,10 @@ def stomp(
     psnr_target_db: float | None = None,
     **kwargs: object,
 ) -> np.ndarray:
-    """StOMP (sélection par seuil)."""
+    """
+    StOMP : même idée de MC sur le support qu’OMP après sélection, mais plusieurs atomes
+    peuvent entrer **en même temps** (seuillage du cours) au lieu d’un seul par itération.
+    """
     _ = kwargs
     D = np.asarray(D, dtype=np.float64)
     x = np.asarray(x, dtype=np.float64)
@@ -174,12 +187,15 @@ def stomp(
         if not Lambda:
             break
 
+        # StOMP vs OMP : ici on peut ajouter **plusieurs** indices d’un coup (seuil),
+        # alors qu’OMP n’en ajoute qu’**un** par tour.
         for j in Lambda:
             if j not in P:
                 P.append(j)
         P.sort()
 
         DS = D[:, P]
+        # Même principe qu’OMP après coup : MC sur le support élargi (étape type 2–3 du sujet).
         alphak, *_ = np.linalg.lstsq(DS, x, rcond=None)
         residuel = x - DS @ alphak
 
@@ -260,26 +276,34 @@ def irls(
     A: np.ndarray,
     y: np.ndarray,
     *,
+    p: float = 0.5,
     max_iter: int = 100,
     epsilon: float = 1e-6,
-    delta: float = 1e-4,
+    delta: float = 1e-6,
     reference_for_psnr: np.ndarray | None = None,
     D_recon: np.ndarray | None = None,
     psnr_target_db: float | None = None,
     **kwargs: object,
 ) -> np.ndarray:
     """
-    IRLS pour approcher la norme L1 sous contrainte Aα = y (régression pondérée).
+    IRLS pour le problème (Pp) du sujet (§5.2) : minimiser ∑ᵢ |αᵢ|^p sous **Aα = y**, avec **0 < p < 1**.
 
-    À chaque pas : poids w_i = 1/(|α_i|+δ), puis α = W^{-1} A^T (A W^{-1} A^T)^{-1} y
-    avec W = diag(w_i). C’est le schéma classique « reweighted least squares » pour BP.
+    Le PDF ne demande pas une variante IRLS « uniquement L1 » : il relie IRLS à la pseudo-norme ℓp
+    (p entre 0 et 1) et au problème (MCP2). Pour la **norme L1** sous contrainte, utiliser **BP/LP**
+    (`basis_pursuit` / `lp`).
+
+    Poids : wᵢ ∝ (|αᵢ|+δ)^{p-2} à chaque itération (W dépend de l’itéré précédent).
     """
     _ = kwargs
+    if not (0.0 < p < 1.0):
+        raise ValueError(
+            "irls : p doit être dans ]0, 1[ (comme au §5.2). Pour la norme L1, utiliser bp ou lp."
+        )
+
     A = np.asarray(A, dtype=np.float64)
     y = np.asarray(y, dtype=np.float64).ravel()
     M, _ = A.shape
 
-    # Initialisation : solution aux moindres carrés (norme minimale si sous-déterminé)
     if M <= A.shape[1]:
         try:
             alpha = A.T @ np.linalg.solve(A @ A.T + 1e-10 * np.eye(M), y)
@@ -290,9 +314,12 @@ def irls(
 
     eye_m = np.eye(M, dtype=np.float64)
     for _ in range(max_iter):
-        # Pondération type L1 : Q^{-1} = diag(|α|+δ) dans min α^T Q α s.t. Aα = y
-        q_inv = np.abs(alpha) + delta
-        q_inv_mat = np.diag(q_inv)
+        t = np.abs(alpha) + delta
+        # Poids pour la quadratisation de ∑ |α_i|^p : en pratique w_i ∝ t^{p-2}
+        w_diag = (0.5 * p) * np.power(t, p - 2.0)
+        w_diag = np.maximum(w_diag, 1e-20)
+        w_inv = 1.0 / w_diag
+        q_inv_mat = np.diag(w_inv)
         mmat = A @ q_inv_mat @ A.T
         try:
             alpha_new = q_inv_mat @ A.T @ np.linalg.solve(mmat + 1e-12 * eye_m, y)
@@ -308,6 +335,10 @@ def irls(
             break
 
     return alpha
+
+
+# Alias : ancien nom, même implémentation (sujet PDF + §5.2)
+irls_lp = irls
 
 
 def basis_pursuit(
@@ -440,6 +471,8 @@ def main_methode(
         "stomp": stomp,
         "cosamp": cosamp,
         "irls": irls,
+        "irls_lp": irls,
+        "irls_p": irls,
         "bp": basis_pursuit,
         "basis_pursuit": basis_pursuit,
         "lp": lp,

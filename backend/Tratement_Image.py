@@ -164,6 +164,8 @@ def patch(
     psnr_stop: bool = False,
     psnr_target_db: float = 45.0,
     lambda_lasso: float = 0.01,
+    norm_p: float = 0.5,
+    s_cosamp_auto: bool = False,
 ) -> Any:
     """
     Découpe une image en patchs (vecteurs colonnes).
@@ -205,7 +207,7 @@ def patch(
         omp,
         stomp,
     )
-    from backend.utils.Dictionnaire import build_dct_dictionary
+    from backend.utils.Dictionnaire import build_dct_dictionary, estime_ordre_parcimonie_cosamp
 
     N, NB = matrice_patchs.shape
     n1, n2, nr, nc = meta
@@ -252,6 +254,19 @@ def patch(
     X_rec = np.zeros((n1, n2), dtype=np.float64)
     NB_used = NB if max_patches is None else min(NB, int(max_patches))
 
+    # CoSaMP : s = ordre de parcimonie supposé. Si s_cosamp_auto, on le déduit comme au TD
+    # K-SVD (OMP sur quelques patchs complets, médiane des |support|).
+    s_eff_cosamp = int(s_cosamp)
+    if method.lower().strip() == "cosamp" and s_cosamp_auto:
+        s_eff_cosamp = estime_ordre_parcimonie_cosamp(
+            matrice_patchs,
+            D,
+            max_iter_omp=max_iter,
+            epsilon=epsilon,
+            max_echantillons=min(64, NB),
+            seed=seed,
+        )
+
     # Choix de la méthode (parcimonieux + convexes du cours)
     method_norm = method.lower().strip()
     if method_norm == "mp":
@@ -262,7 +277,7 @@ def patch(
         solver = stomp
     elif method_norm == "cosamp":
         solver = cosamp
-    elif method_norm == "irls":
+    elif method_norm in ("irls", "irls_lp", "irls_p"):
         solver = irls
     elif method_norm in ("bp", "basis_pursuit"):
         solver = basis_pursuit
@@ -272,7 +287,7 @@ def patch(
         solver = lasso_ista
     else:
         raise ValueError(
-            "method doit être parmi : mp, omp, stomp, cosamp, irls, bp, lp, lasso."
+            "method doit être parmi : mp, omp, stomp, cosamp, irls, irls_lp, bp, lp, lasso."
         )
 
     for idx in range(NB_used):
@@ -292,10 +307,17 @@ def patch(
             )
         elif method_norm == "cosamp":
             alpha = solver(
-                A, yj, max_iter=max_iter, epsilon=epsilon, s=s_cosamp, **extra_psnr
+                A, yj, max_iter=max_iter, epsilon=epsilon, s=s_eff_cosamp, **extra_psnr
             )
-        elif method_norm == "irls":
-            alpha = solver(A, yj, max_iter=max_iter, epsilon=epsilon, **extra_psnr)
+        elif method_norm in ("irls", "irls_lp", "irls_p"):
+            alpha = solver(
+                A,
+                yj,
+                p=float(norm_p),
+                max_iter=max_iter,
+                epsilon=epsilon,
+                **extra_psnr,
+            )
         elif method_norm in ("bp", "basis_pursuit", "lp"):
             alpha = solver(A, yj, **extra_psnr)
         elif method_norm in ("lasso", "lasso_ista"):
@@ -319,5 +341,7 @@ def patch(
     out["image_reconstruite"] = X_rec
     out["phi"] = Phi
     out["D"] = D
+    if ratio is not None or M is not None or Phi is not None:
+        out["s_cosamp_utilise"] = int(s_eff_cosamp) if method.lower().strip() == "cosamp" else None
     return out if as_dict else out["image_reconstruite"]
 

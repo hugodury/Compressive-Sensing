@@ -24,6 +24,8 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
     patch_psnr_stop = patch_params.get("psnr_stop", False)
     patch_psnr_target = patch_params.get("psnr_target_db", 45.0)
     patch_lambda_lasso = patch_params.get("lambda_lasso", 0.01)
+    patch_norm_p = patch_params.get("norm_p", 0.5)
+    patch_s_cosamp_auto = patch_params.get("s_cosamp_auto", False)
 
     # 1) Découpage seul (référence de base + image originale recadrée)
     base = patch(
@@ -79,6 +81,8 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
             psnr_stop=mparams.get("psnr_stop", patch_psnr_stop),
             psnr_target_db=mparams.get("psnr_target_db", patch_psnr_target),
             lambda_lasso=mparams.get("lambda_lasso", patch_lambda_lasso),
+            norm_p=mparams.get("norm_p", patch_norm_p),
+            s_cosamp_auto=mparams.get("s_cosamp_auto", patch_s_cosamp_auto),
         )
         t1 = time.perf_counter()
 
