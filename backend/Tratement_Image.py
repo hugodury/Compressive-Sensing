@@ -130,6 +130,14 @@ def image_to_patch_vectors(
     return matrice_patchs, (n1, n2, nr, nc)
 
 
+def vectoriser(patch: np.ndarray, order: str = "C") -> np.ndarray:
+    """
+    Convertit un patch (bloc B×B ou vecteur) en vecteur colonne de taille B².
+    Utilisé par les méthodes qui attendent un signal 1D.
+    """
+    return np.asarray(patch, dtype=np.float64).reshape(-1, order=order)
+
+
 def patch(
     image_path: str,
     *,
@@ -153,6 +161,9 @@ def patch(
     t_stomp: float = 2.5,
     s_cosamp: int = 6,
     max_patches: int | None = None,
+    psnr_stop: bool = False,
+    psnr_target_db: float = 45.0,
+    lambda_lasso: float = 0.01,
 ) -> Any:
     """
     Découpe une image en patchs (vecteurs colonnes).
@@ -184,7 +195,16 @@ def patch(
     # --- Reconstruction (decoder BCS) ---
     # Import local pour éviter les imports circulaires.
     from backend.utils.mesure import generate_measurement_matrix, apply_measurement
-    from backend.utils.Methode import mp, omp, stomp, cosamp
+    from backend.utils.Methode import (
+        basis_pursuit,
+        cosamp,
+        irls,
+        lasso_ista,
+        lp,
+        mp,
+        omp,
+        stomp,
+    )
     from backend.utils.Dictionnaire import build_dct_dictionary
 
     N, NB = matrice_patchs.shape
@@ -202,16 +222,24 @@ def patch(
                 M = int(np.ceil((r / 100.0) * N))
             else:
                 M = int(np.ceil(r * N))
-        Phi = generate_measurement_matrix(M, N, mode_phi, seed=seed)
+        Phi = generate_measurement_matrix(0.0, N, mode_phi, seed=seed, M=M)
 
-    # D si absent : dictionnaire DCT tronqué
+    # D si absent : DCT ou mélange DCT + patches (avant KSVD éventuel)
     if D is None:
-        if dictionary_type.lower() != "dct":
-            raise ValueError("Pour l’instant, reconstruction : dictionnaire_type doit être 'dct' (par défaut).")
-        D_full = build_dct_dictionary(N)
+        dt = dictionary_type.lower().strip()
         K = int(n_atoms) if n_atoms is not None else N
         K = min(K, N)
-        D = D_full[:, :K].astype(np.float64, copy=False)
+        if dt == "dct":
+            D_full = build_dct_dictionary(N)
+            D = D_full[:, :K].astype(np.float64, copy=False)
+        elif dt in ("mixte", "mix_dct_patches", "dct_ksvd_init"):
+            from backend.utils.Dictionnaire import init_dictionnaire_mixte_dct_patches
+
+            D = init_dictionnaire_mixte_dct_patches(matrice_patchs, K)
+        else:
+            raise ValueError(
+                "dictionnaire_type inconnu : utiliser 'dct' ou 'mixte' (moitié DCT, moitié patches)."
+            )
 
     # Mesures de tous les patchs en colonnes : y = Phi @ x
     y = apply_measurement(Phi, matrice_patchs)  # (M, NB)
@@ -224,7 +252,7 @@ def patch(
     X_rec = np.zeros((n1, n2), dtype=np.float64)
     NB_used = NB if max_patches is None else min(NB, int(max_patches))
 
-    # Choix de la méthode
+    # Choix de la méthode (parcimonieux + convexes du cours)
     method_norm = method.lower().strip()
     if method_norm == "mp":
         solver = mp
@@ -234,18 +262,53 @@ def patch(
         solver = stomp
     elif method_norm == "cosamp":
         solver = cosamp
+    elif method_norm == "irls":
+        solver = irls
+    elif method_norm in ("bp", "basis_pursuit"):
+        solver = basis_pursuit
+    elif method_norm == "lp":
+        solver = lp
+    elif method_norm in ("lasso", "lasso_ista"):
+        solver = lasso_ista
     else:
-        raise ValueError("method doit être parmi : mp, omp, stomp, cosamp.")
+        raise ValueError(
+            "method doit être parmi : mp, omp, stomp, cosamp, irls, bp, lp, lasso."
+        )
 
     for idx in range(NB_used):
         yj = y[:, idx]
+        x_ref = matrice_patchs[:, idx] if psnr_stop else None
+        extra_psnr: dict = {}
+        if psnr_stop and x_ref is not None:
+            extra_psnr = {
+                "reference_for_psnr": x_ref,
+                "D_recon": D,
+                "psnr_target_db": psnr_target_db,
+            }
 
         if method_norm == "stomp":
-            alpha = solver(A, yj, max_iter=max_iter, eps=epsilon, t=t_stomp)
+            alpha = solver(
+                A, yj, max_iter=max_iter, eps=epsilon, t=t_stomp, **extra_psnr
+            )
         elif method_norm == "cosamp":
-            alpha = solver(A, yj, max_iter=max_iter, epsilon=epsilon, s=s_cosamp)
+            alpha = solver(
+                A, yj, max_iter=max_iter, epsilon=epsilon, s=s_cosamp, **extra_psnr
+            )
+        elif method_norm == "irls":
+            alpha = solver(A, yj, max_iter=max_iter, epsilon=epsilon, **extra_psnr)
+        elif method_norm in ("bp", "basis_pursuit", "lp"):
+            alpha = solver(A, yj, **extra_psnr)
+        elif method_norm in ("lasso", "lasso_ista"):
+            alpha = solver(
+                A,
+                yj,
+                lambda_reg=lambda_lasso,
+                max_iter=max_iter,
+                tol=epsilon,
+                **extra_psnr,
+            )
         else:
-            alpha = solver(A, yj, max_iter=max_iter, epsilon=epsilon)
+            alpha = solver(A, yj, max_iter=max_iter, epsilon=epsilon, **extra_psnr)
 
         x_hat = D @ alpha  # (N,)
         i_bloc = idx // nc

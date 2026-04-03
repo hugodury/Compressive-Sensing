@@ -12,15 +12,19 @@ _MODES_VALIDES = frozenset({"gaussian", "uniform", "bernoulli_1", "bernoulli_01"
 
 
 def generate_measurement_matrix(
-    ratio : float,
+    ratio: float,
     N: int,
     mode: str,
     *,
     p: float = 0.5,
     seed: int | None = None,
+    M: int | None = None,
 ) -> np.ndarray:
     """
     Génère Phi ∈ R^{M×N}.
+
+    Si `M` est fourni, on l’utilise directement (nombre de mesures).
+    Sinon `ratio` (fraction ou pourcentage) détermine M via `compute_ratio`.
 
     modes :
     - gaussian : N(0,1)/sqrt(M)
@@ -30,10 +34,15 @@ def generate_measurement_matrix(
     """
     if N < 1:
         raise ValueError("N doit être un entier >= 1.")
-    M = compute_ratio(ratio, N)
-    if M < 1:
+    if M is not None:
+        M_val = int(M)
+        if M_val < 1 or M_val > N:
+            raise ValueError(f"M doit être dans [1, N], reçu M={M_val}, N={N}.")
+    else:
+        M_val = compute_ratio(ratio, N)
+    if M_val < 1:
         raise ValueError("M doit être un entier >= 1.")
-    if M > N:
+    if M_val > N:
         raise ValueError("Pour une acquisition compressée, il faut M <= N.")
 
     mode_norm = mode.lower().strip()
@@ -43,21 +52,21 @@ def generate_measurement_matrix(
         raise ValueError("p doit être dans [0, 1].")
 
     rng = np.random.default_rng(seed)
-    scale = 1.0 / np.sqrt(M)
+    scale = 1.0 / np.sqrt(M_val)
 
     if mode_norm == "gaussian":
-        return rng.standard_normal(size=(M, N), dtype=np.float64) * scale
+        return rng.standard_normal(size=(M_val, N), dtype=np.float64) * scale
 
     if mode_norm == "uniform":
-        return rng.uniform(0.0, 1.0, size=(M, N)).astype(np.float64, copy=False) * scale
+        return rng.uniform(0.0, 1.0, size=(M_val, N)).astype(np.float64, copy=False) * scale
 
     if mode_norm == "bernoulli_1":
-        u = rng.random(size=(M, N))
+        u = rng.random(size=(M_val, N))
         phi = np.where(u < p, -1.0, 1.0)
         return (phi * scale).astype(np.float64, copy=False)
 
     # bernoulli_01
-    bits = rng.integers(0, 2, size=(M, N), dtype=np.int8)
+    bits = rng.integers(0, 2, size=(M_val, N), dtype=np.int8)
     return bits.astype(np.float64, copy=False) * scale
 
 

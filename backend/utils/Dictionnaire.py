@@ -1,9 +1,9 @@
 """
-Gestion des dictionnaires.
+Gestion des dictionnaires (DCT, tirages aléatoires, K-SVD, mélanges).
 """
 import numpy as np
 
-"""Fonction crétion d'un dictionnaire par DCT"""
+
 def build_dct_dictionary(N: int):
     k = np.arange(N).reshape(N, 1) # Colonne de 0 à N-1
     n = np.arange(N).reshape(1, N) # Ligne de 0 à N-1
@@ -14,6 +14,35 @@ def build_dct_dictionary(N: int):
     DCT[0, :] = 1 / np.sqrt(N) #La première ligne étant différente des autres
 
     return DCT
+
+
+def init_dictionnaire_mixte_dct_patches(matrice_patch: np.ndarray, K: int) -> np.ndarray:
+    """
+    Initialise D avec K atomes : environ la moitié vient de la DCT (bases fréquentielles),
+    l’autre moitié de colonnes tirées dans les patchs d’entraînement (comme l’init classique
+    avant K-SVD). Ça combine structure fixe + données réelles, souvent plus stable que
+    du pur aléatoire quand on enchaîne avec K-SVD.
+    """
+    N, Nb = matrice_patch.shape
+    if K < 1:
+        raise ValueError("K doit être >= 1.")
+    # La DCT orthogonale n’a que N colonnes utiles
+    k_dct = min(K // 2, N)
+    k_patch = K - k_dct
+
+    DCT = build_dct_dictionary(N)
+    partie_dct = DCT[:, :k_dct].copy()
+
+    if k_patch <= 0:
+        return partie_dct
+
+    replace = k_patch > Nb
+    indices = np.random.choice(Nb, size=k_patch, replace=replace)
+    partie_p = matrice_patch[:, indices].copy()
+    partie_p = partie_p / np.linalg.norm(partie_p, axis=0, keepdims=True)
+
+    return np.hstack((partie_dct, partie_p))
+
 
 """Fonction d'initialisation dictionnaire par choix alea de K vecteurs
     On appliquera ensuite le K-SVD """

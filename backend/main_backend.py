@@ -21,6 +21,9 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
     patch_ratio = patch_params.get("ratio", params.get("ratio"))
     patch_mode_phi = patch_params.get("mode_phi", params.get("measurement_mode", "gaussian"))
     patch_seed = patch_params.get("seed", params.get("seed"))
+    patch_psnr_stop = patch_params.get("psnr_stop", False)
+    patch_psnr_target = patch_params.get("psnr_target_db", 45.0)
+    patch_lambda_lasso = patch_params.get("lambda_lasso", 0.01)
 
     # 1) Découpage seul (référence de base + image originale recadrée)
     base = patch(
@@ -73,6 +76,9 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
             t_stomp=mparams.get("t", 2.5),
             s_cosamp=mparams.get("s", 6),
             max_patches=patch_max_patches,
+            psnr_stop=mparams.get("psnr_stop", patch_psnr_stop),
+            psnr_target_db=mparams.get("psnr_target_db", patch_psnr_target),
+            lambda_lasso=mparams.get("lambda_lasso", patch_lambda_lasso),
         )
         t1 = time.perf_counter()
 
