@@ -119,6 +119,72 @@ def initRandDictionaryDCT(matrice_patch, K):
     
     return D
 
+def learn_ksvd_full(
+    X: np.ndarray,
+    K: int,
+    n_iter: int,
+    *,
+    init: str,
+    omp_max_iter: int = 40,
+    omp_epsilon: float = 1e-3,
+    seed: int | None = None,
+    max_train_cols: int | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Boucle K-SVD complète (comme au TD / cours 3) : à chaque itération, codage parcimonieux
+    OMP de chaque colonne de X dans D, puis mise à jour atome par atome avec learn_ksvd_dictionary.
+
+    init : 'dct' (premiers K atomes DCT), 'mixte' (moitié DCT + moitié patches), 'random' (K colonnes patchs).
+
+    X : (N, L) matrice des signaux d'entraînement (patchs en colonnes).
+    Retourne (D, A) avec D (N, K), A (K, L_train) derniers coefficients après la dernière passe OMP.
+    """
+    from backend.utils.Methode import omp
+
+    init_n = init.lower().strip()
+    if init_n not in ("dct", "mixte", "random"):
+        raise ValueError("init doit être 'dct', 'mixte' ou 'random'.")
+
+    X = np.asarray(X, dtype=np.float64)
+    N, L = X.shape
+    if K < 1 or K > N * L:
+        raise ValueError("K incohérent.")
+    if n_iter < 1:
+        raise ValueError("n_iter doit être >= 1 pour learn_ksvd_full.")
+
+    if seed is not None:
+        np.random.seed(int(seed))
+
+    Lw = L if max_train_cols is None else min(int(max_train_cols), L)
+    X_work = X[:, :Lw]
+
+    if init_n == "dct":
+        D = build_dct_dictionary(N)[:, :K].astype(np.float64, copy=True)
+    elif init_n == "mixte":
+        D = init_dictionnaire_mixte_dct_patches(X_work, K)
+    else:
+        Lcol = X_work.shape[1]
+        if K > Lcol:
+            indices = np.random.choice(Lcol, size=K, replace=True)
+        else:
+            indices = np.random.choice(Lcol, size=K, replace=False)
+        D = X_work[:, indices].copy()
+        D = D / np.linalg.norm(D, axis=0, keepdims=True)
+
+    A = np.zeros((K, Lw), dtype=np.float64)
+    for _ in range(n_iter):
+        for j in range(Lw):
+            A[:, j] = omp(
+                D,
+                X_work[:, j],
+                max_iter=omp_max_iter,
+                epsilon=omp_epsilon,
+            )
+        D = learn_ksvd_dictionary(X_work, A, D)
+
+    return D, A
+
+
 """Ajustement du dictionnaire (K-SVD)
     Met à jour les atomes de D et les coefficients de A de manière itérative"""
 def learn_ksvd_dictionary(X, A, D):

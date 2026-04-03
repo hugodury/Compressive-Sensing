@@ -166,6 +166,8 @@ def patch(
     lambda_lasso: float = 0.01,
     norm_p: float = 0.5,
     s_cosamp_auto: bool = False,
+    n_iter_ksvd: int = 0,
+    ksvd_train_patches: int | None = None,
 ) -> Any:
     """
     Découpe une image en patchs (vecteurs colonnes).
@@ -207,7 +209,11 @@ def patch(
         omp,
         stomp,
     )
-    from backend.utils.Dictionnaire import build_dct_dictionary, estime_ordre_parcimonie_cosamp
+    from backend.utils.Dictionnaire import (
+        build_dct_dictionary,
+        estime_ordre_parcimonie_cosamp,
+        learn_ksvd_full,
+    )
 
     N, NB = matrice_patchs.shape
     n1, n2, nr, nc = meta
@@ -226,21 +232,68 @@ def patch(
                 M = int(np.ceil(r * N))
         Phi = generate_measurement_matrix(0.0, N, mode_phi, seed=seed, M=M)
 
-    # D si absent : DCT ou mélange DCT + patches (avant KSVD éventuel)
+    # D si absent : DCT fixe, mélange seul, ou K-SVD (init dct / mixte / random selon le type)
+    ksvd_meta: dict[str, Any] | None = None
     if D is None:
         dt = dictionary_type.lower().strip()
         K = int(n_atoms) if n_atoms is not None else N
         K = min(K, N)
-        if dt == "dct":
-            D_full = build_dct_dictionary(N)
-            D = D_full[:, :K].astype(np.float64, copy=False)
-        elif dt in ("mixte", "mix_dct_patches", "dct_ksvd_init"):
-            from backend.utils.Dictionnaire import init_dictionnaire_mixte_dct_patches
+        L_train = NB if ksvd_train_patches is None else min(int(ksvd_train_patches), NB)
 
-            D = init_dictionnaire_mixte_dct_patches(matrice_patchs, K)
+        def _run_ksvd(init_m: str, nit: int) -> np.ndarray:
+            D_loc, _ = learn_ksvd_full(
+                matrice_patchs,
+                K,
+                nit,
+                init=init_m,
+                omp_max_iter=max_iter,
+                omp_epsilon=epsilon,
+                seed=seed,
+                max_train_cols=L_train,
+            )
+            return D_loc
+
+        if dt == "dct":
+            if n_iter_ksvd > 0:
+                D = _run_ksvd("dct", n_iter_ksvd)
+                ksvd_meta = {
+                    "mode": "ksvd",
+                    "init": "dct",
+                    "n_iter": n_iter_ksvd,
+                    "train_cols": L_train,
+                }
+            else:
+                D_full = build_dct_dictionary(N)
+                D = D_full[:, :K].astype(np.float64, copy=False)
+        elif dt in ("mixte", "mix_dct_patches", "dct_ksvd_init"):
+            if n_iter_ksvd > 0:
+                D = _run_ksvd("mixte", n_iter_ksvd)
+                ksvd_meta = {
+                    "mode": "ksvd",
+                    "init": "mixte",
+                    "n_iter": n_iter_ksvd,
+                    "train_cols": L_train,
+                }
+            else:
+                from backend.utils.Dictionnaire import init_dictionnaire_mixte_dct_patches
+
+                D = init_dictionnaire_mixte_dct_patches(matrice_patchs, K)
+        elif dt in ("ksvd", "ksvd_random"):
+            nit = n_iter_ksvd if n_iter_ksvd > 0 else 10
+            D = _run_ksvd("random", nit)
+            ksvd_meta = {"mode": "ksvd", "init": "random", "n_iter": nit, "train_cols": L_train}
+        elif dt in ("ksvd_dct", "ksvd_from_dct"):
+            nit = n_iter_ksvd if n_iter_ksvd > 0 else 10
+            D = _run_ksvd("dct", nit)
+            ksvd_meta = {"mode": "ksvd", "init": "dct", "n_iter": nit, "train_cols": L_train}
+        elif dt in ("ksvd_mixte",):
+            nit = n_iter_ksvd if n_iter_ksvd > 0 else 10
+            D = _run_ksvd("mixte", nit)
+            ksvd_meta = {"mode": "ksvd", "init": "mixte", "n_iter": nit, "train_cols": L_train}
         else:
             raise ValueError(
-                "dictionnaire_type inconnu : utiliser 'dct' ou 'mixte' (moitié DCT, moitié patches)."
+                "dictionary_type inconnu : 'dct', 'mixte', 'ksvd', 'ksvd_dct', 'ksvd_mixte', "
+                "'ksvd_random' (voir README). Avec 'dct' ou 'mixte', n_iter_ksvd>0 lance l'apprentissage."
             )
 
     # Mesures de tous les patchs en colonnes : y = Phi @ x
@@ -341,6 +394,8 @@ def patch(
     out["image_reconstruite"] = X_rec
     out["phi"] = Phi
     out["D"] = D
+    if ksvd_meta is not None:
+        out["ksvd_meta"] = ksvd_meta
     if ratio is not None or M is not None or Phi is not None:
         out["s_cosamp_utilise"] = int(s_eff_cosamp) if method.lower().strip() == "cosamp" else None
     return out if as_dict else out["image_reconstruite"]

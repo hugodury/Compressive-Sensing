@@ -25,7 +25,7 @@ cd /path/to/compressive
 python3 main.py
 ```
 
-Tu peux modifier le bloc `if __name__ == "__main__"` dans `main.py` (image, `methodes`, `ratio`, `dictionary_type`, …).
+Tu peux modifier le bloc `if __name__ == "__main__"` dans `main.py` (image, `methodes`, `ratio`, `dictionary_type`, `n_iter_ksvd`, …). Par défaut `n_iter_ksvd=0` : DCT ou mixte **sans** apprentissage ; passe par ex. `n_iter_ksvd=5` pour comparer avec un dictionnaire appris.
 
 Exemple en une ligne (OMP + IRLS, peu de patchs pour aller vite) :
 
@@ -62,16 +62,21 @@ python3 -c "from backend.Tratement_Image import patch; o=patch('lena.jpg', B=8, 
 
 - Découpage en patchs, `y = Phi x`, reconstruction avec `A = Phi @ D` puis `x_hat = D @ alpha`.
 - **Méthodes** : MP, OMP, StOMP, CoSaMP, **IRLS** (pseudo-norme ℓp avec `0 < p < 1`, paramètre `norm_p`), **BP / lp**, **lasso** (ISTA).
-- **Dictionnaire** : DCT, ou **mixte** (`dictionary_type='mixte'`) : moitié DCT + moitié tirages dans les patchs.
+- **Dictionnaire (K-SVD / DCT)** :
+  - `dictionary_type='dct'` : DCT tronquée (fixe). Avec `n_iter_ksvd>0` (dans `patch` ou `patch_params` / racine des `params` pour `main_backend`), même init DCT puis **boucle K-SVD** (OMP sur les patchs + `learn_ksvd_dictionary`).
+  - `dictionary_type='mixte'` : moitié DCT + moitié colonnes patchs (sans itération). Avec `n_iter_ksvd>0`, même init puis **K-SVD** à partir de ce mélange.
+  - `ksvd_dct` / `ksvd_mixte` / `ksvd_random` : K-SVD obligatoire (init explicite) ; si `n_iter_ksvd` vaut 0, **10 itérations** par défaut.
+  - `ksvd_train_patches` : nombre max de colonnes d’entraînement pour K-SVD (sinon tous les patchs).
+  - La sortie `patch(..., as_dict=True)` peut contenir `ksvd_meta` (mode, init, itérations) quand un apprentissage a eu lieu.
 - **CoSaMP** : option `s_cosamp_auto=True` dans `patch` (ou `patch_params` / `method_params`) pour estimer `s` comme au TD (OMP sur des patchs, médiane des supports). Sinon tu fixes `s` à la main.
 - **Mesures** : `mesure.py` — modes `gaussian`, `uniform`, `bernoulli_1`, `bernoulli_01` (proches des Φ du cours, mais pas nommés Φ1…Φ4 dans le code).
 - **Cohérence mutuelle** : `compute_coherence(Phi, D)` dans `mesure.py`.
 - **Métriques** : `backend/utils/Metrics.py`.
-- **K-SVD** : `learn_ksvd_dictionary` dans `Dictionnaire.py` (une étape de mise à jour) ; **pas encore** enchaînée en boucle complète OMP→KSVD dans `main_backend` (le paramètre `n_iter_ksvd` dans `main.py` n’est pas câblé là-dessus pour l’instant).
+- **K-SVD** : `learn_ksvd_full` + `learn_ksvd_dictionary` dans `Dictionnaire.py` ; câblé dans `patch` / `main_backend` via `n_iter_ksvd` et `dictionary_type`.
 
 ## Ce qu’il reste à faire (surtout sujet PDF + rapport)
 
-- Boucle d’**apprentissage K-SVD** complète sur les imagettes + comparaison **vs DCT** (résultats + explication dans le rapport).
+- **Rapport** : comparer quantitativement DCT fixe, mixte sans itération, et dictionnaires appris (K-SVD depuis DCT / mixte / random) — PSNR, cohérence, temps.
 - **Section 6 du PDF** : tous les pourcentages (15 % … 75 %), les **4 matrices** comme dans le cours, **tableaux** cohérence + **3 vecteurs** test + **erreurs relatives** pour chaque méthode — à produire (scripts ou notebook + figures).
 - **Section 7** : image « hors entraînement », graphes, commentaires.
 - **§5.2** : démos / questions théoriques → **rapport**, pas que du code.

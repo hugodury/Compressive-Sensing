@@ -26,6 +26,8 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
     patch_lambda_lasso = patch_params.get("lambda_lasso", 0.01)
     patch_norm_p = patch_params.get("norm_p", 0.5)
     patch_s_cosamp_auto = patch_params.get("s_cosamp_auto", False)
+    patch_n_iter_ksvd = int(patch_params.get("n_iter_ksvd", params.get("n_iter_ksvd", 0)))
+    patch_ksvd_train = patch_params.get("ksvd_train_patches")
 
     # 1) Découpage seul (référence de base + image originale recadrée)
     base = patch(
@@ -83,6 +85,8 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
             lambda_lasso=mparams.get("lambda_lasso", patch_lambda_lasso),
             norm_p=mparams.get("norm_p", patch_norm_p),
             s_cosamp_auto=mparams.get("s_cosamp_auto", patch_s_cosamp_auto),
+            n_iter_ksvd=patch_n_iter_ksvd,
+            ksvd_train_patches=patch_ksvd_train,
         )
         t1 = time.perf_counter()
 
