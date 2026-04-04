@@ -21,7 +21,7 @@ class AboutPage(BasePage):
                 "- Page de reconstruction complète\n"
                 "- Page de résultats avec tableau et prévisualisations\n"
                 "- Page de comparaison / sweep des ratios\n"
-                "- Page de génération des tableaux section 6\n"
+                "- Page de génération des tableaux M, cohérence, erreurs\n"
                 "- Page de visualisation des patchs\n"
                 "- Navigation par onglets\n"
                 "- Exports automatiques via le backend existant"

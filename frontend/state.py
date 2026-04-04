@@ -14,6 +14,7 @@ class AppState:
     last_result: dict[str, Any] | None = None
     last_sweep: dict[str, Any] | None = None
     last_section6_dir: str = ""
+    last_analyses_empreinte: dict[str, Any] | None = None
     last_patch_dir: str = ""
     logs: list[str] = field(default_factory=list)
 

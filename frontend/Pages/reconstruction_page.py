@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -17,6 +18,7 @@ from frontend.utils import (
     SOLVER_METHOD_IDS,
     SOLVER_UI_CHOICES,
     UI_HELP_DICT_BLOC,
+    UI_HELP_DICT_COMBO_LINES,
     UI_HELP_METHODS_BLOC,
     UI_HELP_PHI_BLOC,
     UI_HELP_RATIO_M,
@@ -185,59 +187,41 @@ class ReconstructionPage(BasePage):
         ttk.Label(lf_dict, text=UI_HELP_DICT_BLOC, style="CardMuted.TLabel", wraplength=720, justify="left").grid(
             row=3, column=0, columnspan=2, sticky="w", pady=(10, 0)
         )
+        ttk.Label(lf_dict, text=UI_HELP_DICT_COMBO_LINES, style="Hint.TLabel", wraplength=720, justify="left").grid(
+            row=4, column=0, columnspan=2, sticky="w", pady=(8, 0)
+        )
 
-        # --- Paramètres solveurs (partagés + spécifiques)
-        lf_sol = ttk.LabelFrame(scroll_inner, text=" Paramètres solveurs ", padding=12)
+        # --- Solveurs : paramètres communs (MP, OMP, BP, LP, etc.)
+        lf_sol = ttk.LabelFrame(scroll_inner, text=" Solveurs — paramètres communs ", padding=12)
         lf_sol.pack(fill="x", pady=(0, 10))
         self._simple_entry(lf_sol, 0, "max_iter (itératifs)", self.vars["max_iter"])
         self._simple_entry(lf_sol, 1, "epsilon (résidu / tol)", self.vars["epsilon"])
         ttk.Label(
             lf_sol,
             text=(
-                "max_iter : nombre maximal d’itérations pour les méthodes itératives (OMP, MP, StOMP, CoSaMP, IRLS, LASSO). "
-                "Souvent 20–80 ; augmentez si la qualité stagne encore.\n"
-                "epsilon : critère d’arrêt sur le résidu (norme) ; typique 1e-6 à 1e-4. Plus petit = convergence plus poussée, calcul plus long."
+                "max_iter / epsilon : utilisés par MP, OMP, StOMP, CoSaMP, IRLS, LASSO (selon la méthode cochée). "
+                "Typ. 20–80 itérations ; epsilon 1e-6 … 1e-4."
             ),
             style="CardMuted.TLabel",
             wraplength=620,
             justify="left",
         ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 8))
-        self._simple_entry(lf_sol, 3, "t StOMP (seuil)", self.vars["t_stomp"])
+        self._simple_entry(lf_sol, 3, "Nombre max de patchs à reconstruire (vide = toute l’image)", self.vars["max_patches"])
         ttk.Label(
             lf_sol,
-            text="Indication : pour StOMP, t est souvent pris entre 2 et 3 (à ajuster selon le niveau de bruit).",
+            text=(
+                "Par défaut (champ vide), chaque lancement traite tous les patchs : vous reconstruisez l’image entière recadrée. "
+                "Renseigner un entier sert seulement aux essais rapides (aperçu partiel, reste de l’image à 0)."
+            ),
             style="CardMuted.TLabel",
-            wraplength=560,
+            wraplength=680,
             justify="left",
-        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(0, 6))
-        self._simple_entry(lf_sol, 5, "s CoSaMP (fixe)", self.vars["s_cosamp"])
-        ttk.Checkbutton(
-            lf_sol,
-            text="CoSaMP : estimer s automatiquement (OMP sur patchs d’entraînement)",
-            variable=self.vars["s_cosamp_auto"],
-        ).grid(row=6, column=0, columnspan=2, sticky="w", pady=6)
-        self._simple_entry(lf_sol, 7, "p IRLS (norme ℓp)", self.vars["norm_p"])
-        ttk.Label(
-            lf_sol,
-            text="IRLS : p dans ]0, 1[ (ex. 0,5). Pour ℓ1 pur, préférer BP ou LP.",
-            style="CardMuted.TLabel",
-            wraplength=560,
-            justify="left",
-        ).grid(row=8, column=0, columnspan=2, sticky="w", pady=(0, 6))
-        self._simple_entry(lf_sol, 9, "λ LASSO", self.vars["lambda_lasso"])
-        ttk.Label(
-            lf_sol,
-            text="Indication : λ souvent entre 1e-4 et 1e-1 selon l’image et le bruit ; trop élevé = image trop lissée.",
-            style="CardMuted.TLabel",
-            wraplength=560,
-            justify="left",
-        ).grid(row=10, column=0, columnspan=2, sticky="w", pady=(0, 6))
-        self._simple_entry(lf_sol, 11, "Limiter nb patchs reco (vide = image entière)", self.vars["max_patches"])
-        self._simple_entry(lf_sol, 12, "Seed reproductibilité", self.vars["seed"])
+        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        self._simple_entry(lf_sol, 5, "Seed reproductibilité", self.vars["seed"])
         ttk.Checkbutton(lf_sol, text="Arrêt si PSNR patch ≥ cible (expérimental)", variable=self.vars["psnr_stop"]).grid(
-            row=13, column=0, columnspan=2, sticky="w", pady=6
+            row=6, column=0, columnspan=2, sticky="w", pady=6
         )
-        self._simple_entry(lf_sol, 14, "PSNR cible (dB)", self.vars["psnr_target_db"])
+        self._simple_entry(lf_sol, 7, "PSNR cible (dB)", self.vars["psnr_target_db"])
         ttk.Label(
             lf_sol,
             text=(
@@ -248,14 +232,63 @@ class ReconstructionPage(BasePage):
             style="CardMuted.TLabel",
             wraplength=620,
             justify="left",
-        ).grid(row=15, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        ).grid(row=8, column=0, columnspan=2, sticky="w", pady=(6, 0))
+
+        lf_stomp = ttk.LabelFrame(scroll_inner, text=" StOMP — paramètres spécifiques ", padding=12)
+        lf_stomp.pack(fill="x", pady=(0, 10))
+        self._simple_entry(lf_stomp, 0, "t (seuil de sélection des atomes)", self.vars["t_stomp"])
+        ttk.Label(
+            lf_stomp,
+            text="StOMP sélectionne plusieurs atomes par itération si leur corrélation dépasse t × ‖r‖. Souvent t ∈ [2, 3].",
+            style="CardMuted.TLabel",
+            wraplength=680,
+            justify="left",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+
+        lf_cosamp = ttk.LabelFrame(scroll_inner, text=" CoSaMP — paramètres spécifiques ", padding=12)
+        lf_cosamp.pack(fill="x", pady=(0, 10))
+        self._simple_entry(lf_cosamp, 0, "s (taille du support cible, mode fixe)", self.vars["s_cosamp"])
+        ttk.Checkbutton(
+            lf_cosamp,
+            text="Estimer s automatiquement (OMP sur patchs d’entraînement, même D)",
+            variable=self.vars["s_cosamp_auto"],
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=6)
+        ttk.Label(
+            lf_cosamp,
+            text="CoSaMP alterne sélection / rejet d’atomes ; s borne la parcimonie à chaque étape. Si « estimer s » est coché, la valeur ci-dessus est ignorée.",
+            style="CardMuted.TLabel",
+            wraplength=680,
+            justify="left",
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 0))
+
+        lf_irls = ttk.LabelFrame(scroll_inner, text=" IRLS — paramètres spécifiques ", padding=12)
+        lf_irls.pack(fill="x", pady=(0, 10))
+        self._simple_entry(lf_irls, 0, "p (pseudo-norme ℓp, 0 < p < 1)", self.vars["norm_p"])
+        ttk.Label(
+            lf_irls,
+            text="IRLS repondère les moindres carrés pour approcher la parcimonie ℓp. Ex. p = 0,5. Pour ℓ1 strict, utilisez plutôt BP ou LP.",
+            style="CardMuted.TLabel",
+            wraplength=680,
+            justify="left",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+
+        lf_lasso = ttk.LabelFrame(scroll_inner, text=" LASSO — paramètres spécifiques ", padding=12)
+        lf_lasso.pack(fill="x", pady=(0, 10))
+        self._simple_entry(lf_lasso, 0, "λ (régularisation ℓ1)", self.vars["lambda_lasso"])
+        ttk.Label(
+            lf_lasso,
+            text="λ contrôle le compromis fidélité / parcimonie ; typ. 1e-4 … 1e-1 selon l’image et le bruit.",
+            style="CardMuted.TLabel",
+            wraplength=680,
+            justify="left",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
         # --- Empreinte carbone (rapport / sensibilisation)
         lf_emp = ttk.LabelFrame(scroll_inner, text=" Empreinte carbone (estimation indicative) ", padding=12)
         lf_emp.pack(fill="x", pady=(0, 10))
         ttk.Label(
             lf_emp,
-            text="La colonne CO₂eq du tableau (onglet Résultats) reprend l’estimation totale répartie au prorata du temps par méthode. W et g/kWh sont des hypothèses — voir EMPREINTE.md.",
+            text="La colonne CO₂eq (onglet Résultats) repartit l’estimation au prorata du temps par méthode. L’onglet « Analyses & graphiques » affiche aussi le CO₂ de la dernière session (sweep ou export des tableaux). Hypothèses W et g/kWh — voir EMPREINTE.md.",
             style="CardMuted.TLabel",
             wraplength=720,
             justify="left",
@@ -264,29 +297,88 @@ class ReconstructionPage(BasePage):
         self._simple_entry(lf_emp, 2, "Hypothèse puissance (W)", self.vars["empreinte_puissance_w"])
         self._simple_entry(lf_emp, 3, "Intensité (g CO₂eq / kWh)", self.vars["empreinte_g_co2_par_kwh"])
 
-        lf_auto = ttk.LabelFrame(scroll_inner, text=" Assistant — meilleure config indicatif (PSNR) ", padding=12)
-        lf_auto.pack(fill="x", pady=(0, 10))
+        self._assistant_pack_anchor = lf_emp
+        self._assistant_outer = ttk.Frame(scroll_inner, style="Panel.TFrame")
+        self._assistant_outer.pack(fill="x", pady=(0, 10), after=self._assistant_pack_anchor)
+
+        abar = ttk.Frame(self._assistant_outer)
+        abar.pack(fill="x", pady=(0, 8))
+        ttk.Label(abar, text="Assistant — repères et balayage partiel", style="CardTitle.TLabel").pack(
+            side="left", anchor="w"
+        )
+        ttk.Button(abar, text="Masquer cette section", command=self._hide_assistant_outer).pack(side="right")
+
+        lf_auto = ttk.LabelFrame(self._assistant_outer, text=" Balayage sur votre image & repères optionnels ", padding=12)
+        lf_auto.pack(fill="x")
         lf_auto.columnconfigure(0, weight=1)
         ttk.Label(
             lf_auto,
             text=(
-                "L’onglet « Patchs » n’affiche que la grille B×B sur l’image recadrée (géométrie du découpage), "
-                "pas les itérations d’un solveur.\n\n"
-                "Ici : 12 combinaisons (ratio × Φ) × 8 méthodes = 96 évaluations sur un sous-ensemble de patchs. "
-                "Le PSNR est indicatif ; validez ensuite avec une reconstruction complète sur toute l’image."
+                "Si vous ne savez pas quoi régler : le plus utile est de lancer le balayage ci-dessous avec votre image "
+                "et le dictionnaire / B déjà choisis plus haut. Il compare plusieurs ratios (20 %, 35 %, 50 %) × les quatre Φ "
+                "× les huit méthodes (sur un nombre limité de patchs). Ce n’est pas une optimisation globale "
+                "(pas de recherche du meilleur dictionnaire ni des meilleurs max_iter, t, s, etc.), mais les trois boutons "
+                "qui apparaissent ensuite sont basés sur votre image — c’est la recommandation la plus fiable dans cet assistant.\n\n"
+                "Les trois boutons tout en bas sont seulement des exemples de formulaire (raccourcis), pas garantis optimaux "
+                "pour toutes les images : utilisez-les si vous voulez un point de départ avant d’affiner ou de balayer."
             ),
             style="CardMuted.TLabel",
             wraplength=720,
             justify="left",
         ).grid(row=0, column=0, sticky="w")
+
         self.vars["coarse_patch_cap"] = tk.StringVar(value="72")
-        self._simple_entry(lf_auto, 1, "Patchs max par essai (balayage)", self.vars["coarse_patch_cap"])
+        scan_fr = ttk.Frame(lf_auto)
+        scan_fr.grid(row=1, column=0, sticky="ew", pady=(14, 0))
+        scan_fr.columnconfigure(1, weight=1)
+        self._simple_entry(scan_fr, 0, "Patchs max par essai (balayage)", self.vars["coarse_patch_cap"])
         ttk.Button(
-            lf_auto,
-            text="Lancer le balayage et afficher la meilleure combinaison",
+            scan_fr,
+            text="Étape recommandée : lancer le balayage → puis appliquer 1ᵉʳ / 2ᵉ / 3ᵉ essai ci-dessous",
             style="Primary.TButton",
             command=self.run_coarse_search,
-        ).grid(row=2, column=0, sticky="ew", pady=(14, 0))
+        ).grid(row=1, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+
+        coarse_wrap = ttk.Frame(lf_auto)
+        coarse_wrap.grid(row=2, column=0, sticky="ew", pady=(16, 0))
+        ttk.Label(
+            coarse_wrap,
+            text="Après le balayage — les trois meilleurs essais sur votre image (PSNR indicatif) :",
+            style="CardTitle.TLabel",
+        ).pack(anchor="w")
+        self._coarse_top3_btn_row = ttk.Frame(coarse_wrap)
+        self._coarse_top3_btn_row.pack(fill="x", pady=(8, 0))
+        self._coarse_top3_placeholder = ttk.Label(
+            self._coarse_top3_btn_row,
+            text="Les boutons apparaîtront ici après le balayage.",
+            style="CardMuted.TLabel",
+        )
+        self._coarse_top3_placeholder.pack(anchor="w")
+
+        preset_fr = ttk.Frame(lf_auto)
+        preset_fr.grid(row=3, column=0, sticky="ew", pady=(18, 0))
+        ttk.Label(
+            preset_fr,
+            text="Optionnel — exemples de réglages (sans calcul ; à titre indicatif seulement) :",
+            style="CardBody.TLabel",
+        ).pack(anchor="w")
+        btn_row = ttk.Frame(preset_fr)
+        btn_row.pack(fill="x", pady=(8, 0))
+        ttk.Button(
+            btn_row,
+            text="Exemple A — DCT & Φ₄ (classique)",
+            command=lambda: self._apply_assistant_preset(1),
+        ).pack(side="left", padx=(0, 8))
+        ttk.Button(
+            btn_row,
+            text="Exemple B — K-SVD depuis DCT",
+            command=lambda: self._apply_assistant_preset(2),
+        ).pack(side="left", padx=(0, 8))
+        ttk.Button(
+            btn_row,
+            text="Exemple C — peu de patchs, rapide",
+            command=lambda: self._apply_assistant_preset(3),
+        ).pack(side="left", padx=(0, 8))
 
         # --- Droite : méthodes
         lf_meth = ttk.LabelFrame(right, text=" Méthodes parcimonieuses ", padding=12)
@@ -304,6 +396,11 @@ class ReconstructionPage(BasePage):
 
         lf_act = ttk.LabelFrame(right, text=" Exécution ", padding=12)
         lf_act.pack(fill="x", pady=(10, 0))
+        self._btn_show_assistant = ttk.Button(
+            lf_act,
+            text="Afficher l’assistant repères",
+            command=self._show_assistant_outer,
+        )
         ttk.Button(lf_act, text="Lancer la reconstruction", style="Primary.TButton", command=self.run_reconstruction).pack(
             fill="x", pady=(0, 8)
         )
@@ -383,6 +480,109 @@ class ReconstructionPage(BasePage):
         }
         return {m: full[m] for m in methods if m in full}
 
+    @staticmethod
+    def _dict_display_for_key(key: str) -> str:
+        for disp, k in DICTIONARY_COMBO_TO_KEY.items():
+            if k == key:
+                return disp
+        return DICTIONARY_COMBO_TEXT[0]
+
+    def _hide_assistant_outer(self) -> None:
+        self._assistant_outer.pack_forget()
+        self._btn_show_assistant.pack(fill="x", pady=(0, 8))
+
+    def _show_assistant_outer(self) -> None:
+        self._btn_show_assistant.pack_forget()
+        self._assistant_outer.pack(fill="x", pady=(0, 10), after=self._assistant_pack_anchor)
+
+    def _apply_assistant_preset(self, choice: int) -> None:
+        """Remplit le formulaire avec trois profils pédagogiques (sans lancer de calcul)."""
+        self.vars["M_explicit"].set("")
+        self.vars["block_size"].set("8")
+        self.vars["measurement_mode"].set("phi4")
+        self.vars["s_cosamp_auto"].set(False)
+        if choice == 1:
+            self.vars["dictionary_type"].set(self._dict_display_for_key("dct"))
+            self.vars["ratio"].set("25")
+            self.vars["max_iter"].set("40")
+            self.vars["max_patches"].set("")
+            self.vars["n_iter_ksvd"].set("0")
+            self.vars["epsilon"].set("1e-6")
+            self.vars["s_cosamp"].set("6")
+            for mid, var in self.method_vars.items():
+                var.set(mid in ("omp", "cosamp"))
+        elif choice == 2:
+            self.vars["dictionary_type"].set(self._dict_display_for_key("ksvd_dct"))
+            self.vars["ratio"].set("40")
+            self.vars["max_iter"].set("55")
+            self.vars["max_patches"].set("")
+            self.vars["n_iter_ksvd"].set("10")
+            self.vars["epsilon"].set("1e-6")
+            self.vars["s_cosamp"].set("8")
+            for mid, var in self.method_vars.items():
+                var.set(mid in ("omp", "cosamp", "irls"))
+        elif choice == 3:
+            self.vars["dictionary_type"].set(self._dict_display_for_key("dct"))
+            self.vars["ratio"].set("20")
+            self.vars["max_iter"].set("22")
+            self.vars["max_patches"].set("64")
+            self.vars["n_iter_ksvd"].set("0")
+            self.vars["epsilon"].set("1e-5")
+            for mid, var in self.method_vars.items():
+                var.set(mid == "omp")
+        else:
+            return
+        letter = "ABC"[choice - 1]
+        self.state.add_log(
+            f"Assistant : exemple {letter} appliqué au formulaire (indicatif — pas le meilleur pour toutes les images)."
+        )
+        messagebox.showinfo(
+            "Exemple appliqué",
+            f"Exemple {letter} : réglages types seulement. Pour une suggestion basée sur votre image, "
+            "utilisez plutôt le balayage puis « Appliquer le 1ᵉʳ / 2ᵉ / 3ᵉ essai ».",
+        )
+
+    def _apply_coarse_trial(self, trial: dict[str, Any]) -> None:
+        r = float(trial["ratio"])
+        ratio_str = str(int(r)) if abs(r - round(r)) < 1e-9 else str(r)
+        self.vars["ratio"].set(ratio_str)
+        self.vars["M_explicit"].set("")
+        self.vars["measurement_mode"].set(str(trial["measurement_mode"]))
+        meth = str(trial["method"]).lower()
+        for mid, var in self.method_vars.items():
+            var.set(mid == meth)
+        ps = float(trial.get("psnr", 0.0))
+        self.state.add_log(
+            f"Assistant : appliqué {meth.upper()} · Φ={trial['measurement_mode']} · {ratio_str} % "
+            f"(PSNR indicatif {ps:.2f} dB)."
+        )
+        messagebox.showinfo(
+            "Paramètres appliqués",
+            "Une seule méthode est cochée. Lancez une reconstruction complète ; vous pourrez recocher d’autres méthodes ensuite.",
+        )
+
+    def _populate_coarse_top3(self, trials_sorted: list[dict[str, Any]]) -> None:
+        for w in self._coarse_top3_btn_row.winfo_children():
+            w.destroy()
+        top3 = trials_sorted[:3]
+        if not top3:
+            ttk.Label(self._coarse_top3_btn_row, text="Aucun essai classé.", style="CardMuted.TLabel").pack(anchor="w")
+            return
+        for i, trial in enumerate(top3):
+            tr = dict(trial)
+            r = float(tr["ratio"])
+            ratio_str = str(int(r)) if abs(r - round(r)) < 1e-9 else str(r)
+            ps = float(tr.get("psnr", 0.0))
+            caption = (
+                f"Appliquer le {i + 1}ᵉ essai : {str(tr['method']).upper()} · {tr['measurement_mode']} · "
+                f"{ratio_str} % · {ps:.1f} dB"
+            )
+            ttk.Button(
+                self._coarse_top3_btn_row,
+                text=caption,
+                command=lambda t=tr: self._apply_coarse_trial(t),
+            ).pack(fill="x", pady=(0, 6))
+
     def run_coarse_search(self) -> None:
         try:
             cap = parse_int(self.vars["coarse_patch_cap"].get(), 72) or 72
@@ -439,36 +639,28 @@ class ReconstructionPage(BasePage):
             r = b["ratio"]
             ratio_str = str(int(r)) if abs(r - round(r)) < 1e-9 else str(r)
             trials = report.get("trials") or []
-            top3 = sorted(trials, key=lambda x: float(x.get("psnr", 0)), reverse=True)[:3]
+            trials_sorted = sorted(trials, key=lambda x: float(x.get("psnr", 0.0)), reverse=True)
+            top3 = trials_sorted[:3]
             top_lines = "\n".join(
-                f"  {i+1}. {t['method'].upper()}  Φ={t['measurement_mode']}  {t['ratio']}%  PSNR≈{t['psnr']:.2f} dB"
+                f"  {i + 1}. {t['method'].upper()}  Φ={t['measurement_mode']}  {t['ratio']}%  PSNR≈{t['psnr']:.2f} dB"
                 for i, t in enumerate(top3)
             )
             self.state.add_log(
                 f"Balayage terminé ({n_ev} évals) : meilleur PSNR indicatif {b['psnr']:.2f} dB — "
                 f"{b['method'].upper()} Φ={b['measurement_mode']} ratio={ratio_str} %"
             )
-            apply = messagebox.askyesno(
-                "Meilleure configuration (indicative)",
+            self._populate_coarse_top3(trials_sorted)
+            messagebox.showinfo(
+                "Balayage terminé",
                 (
-                    f"Meilleur essai (≤ {cap} patchs par tirage) :\n\n"
-                    f"Méthode : {b['method'].upper()}\n"
-                    f"Φ : {b['measurement_mode']}\n"
-                    f"Ratio : {ratio_str} %\n"
-                    f"PSNR indicatif : {b['psnr']:.2f} dB\n\n"
+                    f"{n_ev} évaluations (≤ {cap} patchs par tirage).\n"
+                    f"Meilleur PSNR indicatif : {b['psnr']:.2f} dB — {b['method'].upper()}, "
+                    f"Φ={b['measurement_mode']}, {ratio_str} %.\n\n"
                     f"Top 3 :\n{top_lines}\n\n"
-                    "Appliquer Φ, ratio et une seule méthode cochée dans le formulaire ?"
+                    "Utilisez les boutons « Appliquer le 1ᵉʳ / 2ᵉ / 3ᵉ essai » dans l’assistant "
+                    "(réaffichez-le avec « Afficher l’assistant repères » si vous l’avez masqué)."
                 ),
             )
-            if apply:
-                self.vars["ratio"].set(ratio_str)
-                self.vars["measurement_mode"].set(b["measurement_mode"])
-                for mid, var in self.method_vars.items():
-                    var.set(mid == b["method"])
-                messagebox.showinfo(
-                    "Réglages appliqués",
-                    "Vérifiez les cases, puis lancez une reconstruction complète (éventuellement plusieurs méthodes).",
-                )
         except Exception as exc:
             messagebox.showerror("Erreur", str(exc))
 

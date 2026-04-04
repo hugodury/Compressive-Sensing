@@ -36,36 +36,35 @@ LIGNES_PHI_PROJET: tuple[tuple[str, str], ...] = (
 METHODES_SECTION_6: tuple[str, ...] = ("mp", "omp", "stomp", "cosamp", "irls")
 
 
-def trois_vecteurs_validation(N: int) -> list[np.ndarray]:
+def _signal_dct_parsimonieux(D0: np.ndarray, N: int, coeffs: dict[int, float]) -> np.ndarray:
+    a = np.zeros(N, dtype=np.float64)
+    for k, v in coeffs.items():
+        idx = (N - 1) if k < 0 else k
+        if 0 <= idx < N:
+            a[idx] = v
+    if not np.any(a):
+        a[0] = 1.0
+    return D0 @ a
+
+
+def vecteurs_validation_projet(N: int) -> list[np.ndarray]:
     """
-    Trois signaux de R^N, parcimonieux dans la base DCT (reproductibles).
-    À utiliser pour le tableau « erreurs relatives » du PDF (section 6).
+    Trois signaux de ℝ^N, parcimonieux en base DCT, reproductibles (sujet : 3 vecteurs de validation).
     """
     if N < 1:
         raise ValueError("N doit être >= 1.")
     D0 = build_dct_dictionary(N)
+    specs: tuple[dict[int, float], ...] = (
+        {0: 1.0, 2: 0.5, 5: -0.25},
+        {1: 0.85, 7: 0.55, 13: -0.33},
+        {3: -0.6, 11: 0.28, -1: 0.45},
+    )
+    return [_signal_dct_parsimonieux(D0, N, c) for c in specs]
 
-    a1 = np.zeros(N, dtype=np.float64)
-    a1[0] = 1.0
-    if N > 2:
-        a1[2] = 0.5
 
-    a2 = np.zeros(N, dtype=np.float64)
-    if N > 1:
-        a2[1] = 0.8
-    if N > 5:
-        a2[5] = -0.3
-    if N > 10:
-        a2[10] = 0.2
-
-    a3 = np.zeros(N, dtype=np.float64)
-    if N > 3:
-        a3[3] = 0.4
-        a3[7] = -0.6
-    if N > 15:
-        a3[15] = 0.25
-
-    return [D0 @ a1, D0 @ a2, D0 @ a3]
+def vecteur_validation_reference(N: int) -> np.ndarray:
+    """Premier vecteur de :func:`vecteurs_validation_projet` (compatibilité)."""
+    return vecteurs_validation_projet(N)[0]
 
 
 def tableau_M_pour_pourcentages(N: int) -> dict[int, int]:
@@ -208,17 +207,17 @@ def _ecrire_csv_coherence(chemin: str, data: dict[str, Any]) -> None:
 
 
 def _ecrire_csv_erreurs(chemin_csv: str, erreurs: dict[str, Any]) -> None:
-    """Un seul fichier : colonne ``vecteur_test`` ∈ {1,2,3} pour les trois signaux de validation reproductibles."""
+    """Une ligne par (vecteur de test, Φ, méthode) ; colonnes P_15 …"""
     ps: list[int] = erreurs["pourcentages"]
-    fieldnames = ["vecteur_test", "Phi", "methode"] + [f"P_{p}" for p in ps]
+    fieldnames = ["vecteur", "Phi", "methode"] + [f"P_{p}" for p in ps]
     with open(chemin_csv, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=fieldnames)
         w.writeheader()
         for bloc in erreurs["par_vecteur"]:
-            v = int(bloc["indice"])
+            vid = int(bloc["indice"])
             for phi_label, par_meth in bloc["details"].items():
                 for meth, vals in par_meth.items():
-                    row: dict[str, Any] = {"vecteur_test": v, "Phi": phi_label, "methode": meth}
+                    row: dict[str, Any] = {"vecteur": vid, "Phi": phi_label, "methode": meth}
                     for p in ps:
                         row[f"P_{p}"] = round(vals[int(p)], 6)
                     w.writerow(row)
@@ -237,7 +236,7 @@ def exporter_tableaux_section6(
     Crée un dossier horodaté (jj.mm.hh.mm) sous ``output_dir`` avec un sous-dossier ``Graph`` contenant :
     - ``M_pour_P.csv`` : P → M
     - ``coherence_mutuelle.csv``
-    - ``erreurs_relatives.csv`` si demandé (colonne ``vecteur_test`` = 1, 2 ou 3)
+    - ``erreurs_relatives.csv`` si demandé (une ligne par vecteur de test 1…3, Φ et méthode)
 
     Retourne le chemin du dossier ``Graph`` (là où sont les CSV).
     """
@@ -256,7 +255,7 @@ def exporter_tableaux_section6(
     _ecrire_csv_coherence(os.path.join(dossier, "coherence_mutuelle.csv"), coh)
 
     if avec_erreurs_relatives:
-        vecs = trois_vecteurs_validation(N)
+        vecs = vecteurs_validation_projet(N)
         err = tableau_erreurs_relatives_vecteurs(
             vecs, D, seed=seed, max_iter=max_iter,
         )

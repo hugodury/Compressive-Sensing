@@ -51,44 +51,17 @@ class HomePage(BasePage):
             highlightthickness=0,
             bd=0,
         )
-        self.vscroll = ttk.Scrollbar(container, orient="vertical", command=self.canvas.yview)
-        self.canvas.configure(yscrollcommand=self.vscroll.set)
-
+        # Pas de scrollbar interne : le canvas prend toute la hauteur du poster ; le défilement est celui de l’onglet (scroll_host).
         self.canvas.grid(row=0, column=0, sticky="nsew")
-        self.vscroll.grid(row=0, column=1, sticky="ns")
-
-        self.canvas.bind("<MouseWheel>", self._on_mousewheel)
-        self.canvas.bind("<Button-4>", self._on_linux_scroll_up)
-        self.canvas.bind("<Button-5>", self._on_linux_scroll_down)
-        self.canvas.bind("<Enter>", lambda e: self.canvas.focus_set())
 
         self._build_poster()
 
     def refresh(self) -> None:
         return None
 
-    def _on_mousewheel(self, event: tk.Event) -> None:
-        try:
-            delta = int(-event.delta / 120)
-            if delta != 0:
-                self.canvas.yview_scroll(delta, "units")
-        except Exception:
-            pass
-
-    def _on_linux_scroll_up(self, event: tk.Event) -> None:
-        self.canvas.yview_scroll(-3, "units")
-
-    def _on_linux_scroll_down(self, event: tk.Event) -> None:
-        self.canvas.yview_scroll(3, "units")
-
     def _build_poster(self) -> None:
         self.canvas.delete("all")
         self._photos.clear()
-
-        width = 1320
-        height = 1520
-        self.canvas.config(scrollregion=(0, 0, width, height))
-        self.canvas.create_rectangle(0, 0, width, height, fill=POSTER_BG, outline="")
 
         self.canvas.create_text(
             24,
@@ -352,6 +325,16 @@ class HomePage(BasePage):
         )
 
         self._connect_cards_snake(x_col, y_row, card_w, card_h)
+
+        self.update_idletasks()
+        bb = self.canvas.bbox("all")
+        if bb:
+            pad_x, pad_y = 24, 40
+            w = int(bb[2]) + pad_x
+            h = int(bb[3]) + pad_y
+            bg_id = self.canvas.create_rectangle(0, 0, w, h, fill=POSTER_BG, outline="")
+            self.canvas.tag_lower(bg_id)
+            self.canvas.configure(scrollregion=(0, 0, w, h), height=h)
 
     def _connect_cards_snake(self, x_col: list[int], y_row: list[int], cw: int, ch: int) -> None:
         self._arrow(x_col[0] + cw, y_row[0] + ch // 2, x_col[1], y_row[0] + ch // 2, "patchs")

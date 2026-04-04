@@ -20,12 +20,11 @@ from frontend.state import AppState
 from frontend.theme import apply_theme
 from frontend.utils import ensure_project_root
 from frontend.Pages import (
-    ComparisonPage,
+    AnalysesPage,
     HomePage,
     PatchesPage,
     ReconstructionPage,
     ResultsPage,
-    Section6Page,
 )
 
 
@@ -60,12 +59,13 @@ class CompressiveSensingApp(tk.Tk):
         self.notebook.pack(fill="both", expand=True, padx=18, pady=(10, 16))
 
         self.pages: dict[str, ttk.Frame] = {}
+        # Onglet réel du Notebook (shell avec scroll) — ``select()`` n’accepte que ce widget, pas la page interne
+        self._notebook_tab_widgets: dict[str, tk.Misc] = {}
         self._scroll_canvases: list[tk.Canvas] = []
         self._add_page("Accueil", HomePage)
         self._add_page("Reconstruction", ReconstructionPage)
         self._add_page("Résultats", ResultsPage)
-        self._add_page("Comparaisons", ComparisonPage)
-        self._add_page("Cohérence & erreurs", Section6Page)
+        self._add_page("Analyses & graphiques", AnalysesPage)
         self._add_page("Patchs", PatchesPage)
 
         self._bind_global_mousewheel()
@@ -124,6 +124,7 @@ class CompressiveSensingApp(tk.Tk):
         if page_cls is ReconstructionPage:
             page = page_cls(self.notebook, self)
             self.pages[title] = page
+            self._notebook_tab_widgets[title] = page
             self.notebook.add(page, text=title)
             return
 
@@ -134,7 +135,9 @@ class CompressiveSensingApp(tk.Tk):
         self.register_scroll_canvas(canvas)
         page = page_cls(inner, self)
         self.pages[title] = page
-        page.pack(anchor="nw", fill="x", expand=False)
+        self._notebook_tab_widgets[title] = shell
+        # fill=both : évite une bande vide (fond clair) sous les pages hautes comme l’accueil poster
+        page.pack(anchor="nw", fill="both", expand=True)
         self.notebook.add(shell, text=title)
 
     def refresh_all_pages(self) -> None:
@@ -155,9 +158,9 @@ class CompressiveSensingApp(tk.Tk):
                     traceback.print_exc()
 
     def select_tab(self, title: str) -> None:
-        page = self.pages.get(title)
-        if page is not None:
-            self.notebook.select(page)
+        tab = self._notebook_tab_widgets.get(title)
+        if tab is not None:
+            self.notebook.select(tab)
 
 
 def create_app() -> CompressiveSensingApp:

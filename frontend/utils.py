@@ -35,6 +35,9 @@ PHI_COURS_RADIO_LABELS: dict[str, str] = {
     "phi4": "Φ₄ — Gaussienne / √M",
 }
 
+# Libellés courts pour légendes (M, μ, Φ)
+PHI_SHORT_LABEL: dict[str, str] = {"phi1": "Φ₁", "phi2": "Φ₂", "phi3": "Φ₃", "phi4": "Φ₄"}
+
 PHI_MEASUREMENT_MODES: tuple[str, ...] = PHI_COURS_KEYS
 
 # Toutes les clés reconnues par le backend (saisie manuelle / anciens projets)
@@ -99,11 +102,21 @@ UI_HELP_METHODS_BLOC = (
 )
 
 UI_HELP_DICT_BLOC = (
-    "D est N×K (N = B²), atomes en colonnes ; α parcimonieux avec x ≈ Dα et y = Φx. Le menu reprend les clés backend. "
-    "K-SVD = algorithme d’apprentissage dans `Dictionnaire.learn_ksvd_full` (OMP interne + mise à jour des atomes). "
-    "Réglez « Itérations K-SVD » > 0 pour l’apprentissage ; pour « ksvd » / « ksvd_dct » / « ksvd_mixte », si vous mettez 0, "
-    "le code utilise tout de même un défaut (ex. 10 itérations) car ce sont des modes « K-SVD ». "
-    "K ≤ N (vide = N). Détail par ligne du menu : voir les libellés du combo."
+    "Les 5 choix sont tous utiles selon ce que vous voulez montrer : "
+    "(1) DCT seule — référence rapide, pas d’apprentissage, idéal baseline. "
+    "(2) Mixte — DCT + vrais patchs sans itérer K-SVD : bon compromis « structure + données ». "
+    "(3) K-SVD init. aléatoire — dico appris from scratch sur les patchs (plus lent, très démo apprentissage). "
+    "(4) K-SVD depuis DCT — même apprentissage mais départ stable (souvent meilleur que l’aléatoire). "
+    "(5) K-SVD depuis mixte — départ riche ; utile pour comparer initialisations dans le rapport. "
+    "K-SVD = `learn_ksvd_full` ; itérations > 0 indispensables pour un vrai apprentissage (sinon défaut interne si mode ksvd*)."
+)
+
+UI_HELP_DICT_COMBO_LINES = (
+    "1. DCT seule — baseline cours, aucun coût K-SVD.\n"
+    "2. Mixte — moitié DCT + moitié colonnes de patchs (fixe, sans boucle K-SVD).\n"
+    "3. K-SVD (aléatoire) — apprentissage complet, init. par patchs tirés.\n"
+    "4. K-SVD (depuis DCT) — apprentissage avec init. DCT tronquée.\n"
+    "5. K-SVD (depuis mixte) — apprentissage avec init. mixte DCT+patchs."
 )
 
 UI_HELP_EMPREINTE_RESULTS = (
@@ -453,4 +466,127 @@ def build_sweep_figure(ratios: Iterable[float], psnr_by_method: dict[str, list[f
         spine.set_color("#cbd5e1")
         spine.set_linewidth(0.8)
     fig.subplots_adjust(top=0.88, bottom=0.14, left=0.1, right=0.98)
+    return fig
+
+
+def build_section6_mp_coherence_figure(
+    mp_rows: list[list[str]] | None,
+    coherence_rows: list[list[str]] | None,
+) -> Figure:
+    """
+    Deux graphiques : M(P) depuis ``M_pour_P.csv`` ;
+    cohérence mutuelle μ(Φ,D) pour les quatre Φ depuis ``coherence_mutuelle.csv``.
+    """
+    fig = Figure(figsize=(9.2, 7.2), dpi=100)
+    fig.patch.set_facecolor("#ffffff")
+    fig.suptitle(
+        "Mesures M(P) et cohérence mutuelle μ(Φ, D)",
+        fontsize=12,
+        fontweight="bold",
+        color="#0f172a",
+        y=0.98,
+    )
+    ax0 = fig.add_subplot(2, 1, 1)
+    ax1 = fig.add_subplot(2, 1, 2)
+    for ax in (ax0, ax1):
+        ax.set_facecolor("#f8fafc")
+        for spine in ax.spines.values():
+            spine.set_color("#cbd5e1")
+        ax.grid(True, linestyle="--", alpha=0.5, color="#94a3b8")
+        ax.set_axisbelow(True)
+
+    # --- M(P)
+    if mp_rows and len(mp_rows) >= 2:
+        try:
+            ps_m: list[int] = []
+            ms: list[float] = []
+            for r in mp_rows[1:]:
+                if len(r) >= 2 and r[0].strip():
+                    ps_m.append(int(float(r[0].replace(",", "."))))
+                    ms.append(float(r[1].replace(",", ".")))
+            if ps_m:
+                ax0.plot(ps_m, ms, marker="s", color="#1d4ed8", linewidth=2, markersize=7, markeredgecolor="white")
+                ax0.set_xticks(ps_m)
+        except (ValueError, IndexError):
+            ax0.text(0.5, 0.5, "M_pour_P.csv : format inattendu", ha="center", va="center", transform=ax0.transAxes)
+    else:
+        ax0.text(
+            0.5,
+            0.5,
+            "Générez les tableaux pour obtenir M_pour_P.csv",
+            ha="center",
+            va="center",
+            transform=ax0.transAxes,
+            color="#64748b",
+        )
+    ax0.set_title("M = ⌈P·N/100⌉ en fonction du pourcentage P (N = B²)", fontsize=10, fontweight="bold", color="#334155")
+    ax0.set_xlabel("P (%)", fontsize=9, color="#475569")
+    ax0.set_ylabel("M", fontsize=9, color="#475569")
+
+    # --- Cohérence μ : 4 courbes (Φ₁…Φ₄), comme le tableau du PDF
+    palette = ("#1d4ed8", "#0d9488", "#b45309", "#7c3aed")
+    if coherence_rows and len(coherence_rows) >= 2:
+        headers = coherence_rows[0]
+        p_cols: list[tuple[int, int]] = []  # (index, P)
+        for i, h in enumerate(headers):
+            hs = h.strip()
+            if hs.startswith("P_"):
+                try:
+                    p_cols.append((i, int(hs.split("_", 1)[1])))
+                except ValueError:
+                    continue
+        p_cols.sort(key=lambda x: x[1])
+        if not p_cols:
+            ax1.text(0.5, 0.5, "Pas de colonnes P_* dans le CSV", ha="center", va="center", transform=ax1.transAxes)
+        else:
+            percents = [p for _, p in p_cols]
+            for ri, row in enumerate(coherence_rows[1:]):
+                if len(row) < 1:
+                    continue
+                phi_key = row[0].strip().lower()
+                leg = PHI_SHORT_LABEL.get(phi_key, row[0].strip().upper())
+                ci = list(PHI_COURS_KEYS).index(phi_key) if phi_key in PHI_COURS_KEYS else ri % len(palette)
+                c = palette[ci % len(palette)]
+                ys: list[float] = []
+                ok = True
+                for idx, _p in p_cols:
+                    if idx >= len(row):
+                        ok = False
+                        break
+                    try:
+                        ys.append(float(row[idx].replace(",", ".")))
+                    except ValueError:
+                        ok = False
+                        break
+                if ok and ys:
+                    ax1.plot(
+                        percents,
+                        ys,
+                        marker="o",
+                        linewidth=2,
+                        markersize=6,
+                        label=leg,
+                        color=c,
+                        markeredgecolor="white",
+                        markeredgewidth=0.5,
+                    )
+            handles, labels = ax1.get_legend_handles_labels()
+            if labels:
+                ax1.legend(handles, labels, title="Matrice Φ", fontsize=8, title_fontsize=8, loc="best", framealpha=1.0)
+            ax1.set_xticks(percents)
+    else:
+        ax1.text(
+            0.5,
+            0.5,
+            "Générez les tableaux pour obtenir coherence_mutuelle.csv",
+            ha="center",
+            va="center",
+            transform=ax1.transAxes,
+            color="#64748b",
+        )
+    ax1.set_title("Cohérence mutuelle μ(Φ, D) — une courbe par Φ (cours)", fontsize=10, fontweight="bold", color="#334155")
+    ax1.set_xlabel("Pourcentage de mesures P (%)", fontsize=9, color="#475569")
+    ax1.set_ylabel("μ", fontsize=9, color="#475569")
+
+    fig.subplots_adjust(top=0.91, bottom=0.08, left=0.11, right=0.97, hspace=0.35)
     return fig

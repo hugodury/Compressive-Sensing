@@ -26,7 +26,7 @@ python3 frontend/app.py
 
 Lancer **depuis un terminal** à la racine (pas un double-clic sans console) pour voir les erreurs éventuelles.
 
-**Onglets** : Accueil (rappel du pipeline + schéma), Reconstruction, Résultats, Comparaisons (sweep PSNR vs ratio), Cohérence & erreurs (export CSV §6), Patchs (une image avec **grille des blocs** sur l’image recadrée, même géométrie que le backend).  
+**Onglets** : Accueil, Reconstruction, Résultats, **Analyses & graphiques** (sweep PSNR, CSV M / cohérence / erreurs, graphes, CO₂ session), Patchs (grille B×B).  
 Les pages longues ont un **défilement vertical** ; la molette cible le canvas sous le curseur.
 
 Détails supplémentaires : `frontend/README_UI.md`.
@@ -126,9 +126,9 @@ Pourcentages **P = 15, 20, 25, 30, 50, 75** ; matrices **Φ₁–Φ₄** ; cohé
 python3 -m backend.utils.projet_tableaux
 ```
 
-Sortie typique : `Data/Result/<jj.mm.hh.mm>/Graph/` avec notamment `M_pour_P.csv`, `coherence_mutuelle.csv`, **`erreurs_relatives.csv`** (une seule table, colonne **`vecteur_test`** ∈ {1,2,3}).
+Sortie typique : `Data/Result/<jj.mm.hh.mm>/Graph/` avec `M_pour_P.csv`, `coherence_mutuelle.csv`, **`erreurs_relatives.csv`** (colonnes `vecteur`, `Phi`, `methode`, `P_15` … — **trois vecteurs** de test).
 
-Courbes PSNR vs ratios : `backend/utils/graphiques_projet.py` (matplotlib).
+Courbes PSNR vs ratios : `backend/utils/graphiques_projet.py` (matplotlib). Dans l’IHM (**Analyses**), l’onglet **Graphiques M et μ** trace **M(P)** et **μ(Φ, D)** pour **Φ₁–Φ₄** à partir de `M_pour_P.csv` et `coherence_mutuelle.csv`.
 
 ## Structure du dépôt (aperçu)
 
