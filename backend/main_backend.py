@@ -28,6 +28,7 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
     patch_s_cosamp_auto = patch_params.get("s_cosamp_auto", False)
     patch_n_iter_ksvd = int(patch_params.get("n_iter_ksvd", params.get("n_iter_ksvd", 0)))
     patch_ksvd_train = patch_params.get("ksvd_train_patches")
+    patch_dict_train = patch_params.get("dictionary_train_image_path", params.get("dictionary_train_image_path"))
 
     # 1) Découpage seul (référence de base + image originale recadrée)
     base = patch(
@@ -68,7 +69,7 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
             ncols=patch_ncols,
             order=patch_order,
             as_dict=True,
-            M=patch_params.get("M"),
+            M=patch_params.get("M", params.get("M")),
             ratio=patch_ratio,
             method=nom,
             dictionary_type=params.get("dictionary_type", "dct"),
@@ -87,6 +88,7 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
             s_cosamp_auto=mparams.get("s_cosamp_auto", patch_s_cosamp_auto),
             n_iter_ksvd=patch_n_iter_ksvd,
             ksvd_train_patches=patch_ksvd_train,
+            dictionary_train_image_path=patch_dict_train,
         )
         t1 = time.perf_counter()
 
@@ -102,6 +104,12 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
             start=t0,
             end=t1,
         )
+        if "coherence_mutuelle_cours" in out:
+            metrics["coherence_mutuelle_cours"] = out["coherence_mutuelle_cours"]
+            metrics["pourcentage_mesures"] = out["pourcentage_mesures"]
+            metrics["nb_mesures_M"] = out["nb_mesures_M"]
+        if out.get("s_cosamp_utilise") is not None:
+            metrics["s_cosamp_utilise"] = out["s_cosamp_utilise"]
         metrics_by_method[nom] = metrics
 
     return {

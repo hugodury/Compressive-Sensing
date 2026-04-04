@@ -10,6 +10,51 @@ import numpy as np
 
 _MODES_VALIDES = frozenset({"gaussian", "uniform", "bernoulli_1", "bernoulli_01"})
 
+# Cours 4 (réduction de dimension) — section « Exemples de matrices de mesure »
+# Φ1 : uniforme ; Φ2 : Bernoulli {-1,+1} ; Φ3 : Bernoulli {0,1} ; Φ4 : gaussienne N(0,1/M)
+_MODES_MESURE_COURS: dict[str, str] = {
+    "phi1": "uniform",
+    "φ1": "uniform",
+    "phi2": "bernoulli_1",
+    "φ2": "bernoulli_1",
+    "phi3": "bernoulli_01",
+    "φ3": "bernoulli_01",
+    "phi4": "gaussian",
+    "φ4": "gaussian",
+}
+
+# Projet PDF section 6 — pourcentages P de mesures (M = ceil(P*N/100))
+POURCENTAGES_MESURES_PROJET: tuple[int, ...] = (15, 20, 25, 30, 50, 75)
+
+
+def resolve_measurement_mode(mode: str) -> str:
+    """
+    Résout un libellé du cours / du projet vers un mode interne.
+    Ex. phi1, Φ1 → uniform ; phi4 → gaussian.
+    """
+    key = mode.strip().lower().replace("φ", "phi")
+    if key in _MODES_MESURE_COURS:
+        return _MODES_MESURE_COURS[key]
+    return mode.lower().strip()
+
+
+def pourcentage_vers_M(P: float, N: int) -> int:
+    """
+    Nombre de mesures M pour un pourcentage P (comme au projet) :
+    M = ceil(P * N / 100).
+    """
+    if N < 1:
+        raise ValueError("N doit être >= 1.")
+    p = float(P)
+    if p < 0.0 or p > 100.0:
+        raise ValueError("P doit être dans [0, 100] (pourcentage de mesures).")
+    return int(np.ceil(p * N / 100.0))
+
+
+def liste_M_pour_pourcentages_projet(N: int) -> dict[int, int]:
+    """Pour N fixé, M pour chaque P ∈ {15,20,25,30,50,75}."""
+    return {int(p): pourcentage_vers_M(p, N) for p in POURCENTAGES_MESURES_PROJET}
+
 
 def generate_measurement_matrix(
     ratio: float,
@@ -26,14 +71,19 @@ def generate_measurement_matrix(
     Si `M` est fourni, on l’utilise directement (nombre de mesures).
     Sinon `ratio` (fraction ou pourcentage) détermine M via `compute_ratio`.
 
-    modes :
-    - gaussian : N(0,1)/sqrt(M)
-    - uniform : U(0,1)/sqrt(M)
-    - bernoulli_1 : {-1,+1} (probabilité p de -1) / sqrt(M)
-    - bernoulli_01 : {0,1} / sqrt(M)
+    modes (ou alias du cours / sujet) :
+    - gaussian / phi4 : N(0,1)/sqrt(M)
+    - uniform / phi1 : U(0,1)/sqrt(M)
+    - bernoulli_1 / phi2 : {-1,+1} (probabilité p de -1) / sqrt(M)
+    - bernoulli_01 / phi3 : {0,1} / sqrt(M)
     """
     if N < 1:
         raise ValueError("N doit être un entier >= 1.")
+
+    mode_norm = resolve_measurement_mode(mode)
+    if mode_norm not in _MODES_VALIDES:
+        raise ValueError(f"mode doit être parmi {sorted(_MODES_VALIDES)} ou alias phi1…phi4, reçu : {mode!r}.")
+
     if M is not None:
         M_val = int(M)
         if M_val < 1 or M_val > N:
@@ -45,9 +95,6 @@ def generate_measurement_matrix(
     if M_val > N:
         raise ValueError("Pour une acquisition compressée, il faut M <= N.")
 
-    mode_norm = mode.lower().strip()
-    if mode_norm not in _MODES_VALIDES:
-        raise ValueError(f"mode doit être parmi {sorted(_MODES_VALIDES)}, reçu : {mode!r}.")
     if not (0.0 <= p <= 1.0):
         raise ValueError("p doit être dans [0, 1].")
 
@@ -122,10 +169,39 @@ def compute_ratio(ratio: float, N: int) -> int:
     return M
 
 
+def compute_coherence_cours_phi_d(Phi: np.ndarray, D: np.ndarray) -> float:
+    """
+    Cohérence mutuelle μ(Φ, D) du cours (ch. 4) :
+
+        μ(Φ, D) = max_{i,j} |⟨φ_i, d_j⟩| / (√N ‖φ_i‖ ‖d_j‖)
+
+    où φ_i est la i-ème ligne de Φ et d_j la j-ème colonne de D (vecteurs de R^N).
+    Tableau du sujet PDF section 6 : utiliser cette définition.
+    """
+    Phi = np.asarray(Phi, dtype=np.float64)
+    D = np.asarray(D, dtype=np.float64)
+
+    if Phi.ndim != 2 or D.ndim != 2:
+        raise ValueError("Phi et D doivent être des matrices 2D.")
+    M, N = Phi.shape
+    if D.shape[0] != N:
+        raise ValueError("Dimensions incompatibles : Phi.shape[1] doit égaler D.shape[0].")
+
+    P = Phi @ D
+    row_norms = np.linalg.norm(Phi, axis=1)
+    col_norms = np.linalg.norm(D, axis=0)
+    if np.any(row_norms < 1e-15) or np.any(col_norms < 1e-15):
+        raise ValueError("Une ligne de Φ ou une colonne de D a une norme quasi nulle.")
+
+    S = np.abs(P) / (row_norms[:, np.newaxis] * col_norms[np.newaxis, :])
+    return float(np.max(S) / np.sqrt(float(N)))
+
+
 def compute_coherence(Phi: np.ndarray, D: np.ndarray) -> float:
     """
-    Cohérence mutuelle entre colonnes de A = Phi @ D (normalisées).
-    Retour : max_{i!=j} |<a_i, a_j>|.
+    Cohérence des colonnes de A = ΦD (normalisées) : max_{i≠j} |⟨a_i, a_j⟩| / (‖a_i‖‖a_j‖).
+    Utile pour analyser le dictionnaire équivalent en domaine des mesures ; ce n’est pas
+    la même quantité que μ(Φ, D) du cours — voir `compute_coherence_cours_phi_d`.
     """
     Phi = np.asarray(Phi, dtype=np.float64)
     D = np.asarray(D, dtype=np.float64)

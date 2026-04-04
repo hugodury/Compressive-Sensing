@@ -10,6 +10,7 @@ from typing import Any
 from backend.main_backend import main_backend
 from backend.utils.save import save_results
 
+
 def setupParam(
     image_path: str,
     block_size: int,
@@ -20,17 +21,29 @@ def setupParam(
     output_path: str = "Data/Result",
     n_atoms: int | None = None,
     n_iter_ksvd: int = 0,
+    dictionary_train_image_path: str | None = None,
     method_params: dict[str, dict[str, Any]] | None = None,
     patch_params: dict[str, Any] | None = None,
     seed: int | None = None,
 ) -> dict[str, Any]:
     if block_size <= 0:
         raise ValueError("block_size doit être > 0.")
-    if not (0 < ratio <= 1):
-        raise ValueError("ratio doit être dans ]0, 1].")
+
+    rf = float(ratio)
+    if rf <= 0.0:
+        raise ValueError("ratio doit être > 0.")
+    if rf <= 1.0:
+        pass
+    elif rf <= 100.0:
+        pass
+    else:
+        raise ValueError("ratio : utiliser une fraction dans ]0, 1] (ex. 0.25) ou un pourcentage dans ]0, 100] (ex. 25).")
 
     n = block_size * block_size
-    m = max(1, math.ceil(ratio * n))
+    if rf <= 1.0:
+        m = max(1, math.ceil(rf * n))
+    else:
+        m = max(1, math.ceil((rf / 100.0) * n))
 
     if isinstance(methodes, str):
         methodes = [methodes]
@@ -50,6 +63,7 @@ def setupParam(
         "output_path": output_path,
         "n_atoms": n_atoms,
         "n_iter_ksvd": n_iter_ksvd,
+        "dictionary_train_image_path": dictionary_train_image_path,
         "method_params": method_params or {},
         "patch_params": patch_params or {},
         "seed": seed,
@@ -66,6 +80,7 @@ def main(
     output_path: str = "Data/Result",
     n_atoms: int | None = None,
     n_iter_ksvd: int = 0,
+    dictionary_train_image_path: str | None = None,
     method_params: dict[str, dict[str, Any]] | None = None,
     patch_params: dict[str, Any] | None = None,
     seed: int | None = None,
@@ -80,6 +95,7 @@ def main(
         output_path=output_path,
         n_atoms=n_atoms,
         n_iter_ksvd=n_iter_ksvd,
+        dictionary_train_image_path=dictionary_train_image_path,
         method_params=method_params,
         patch_params=patch_params,
         seed=seed,

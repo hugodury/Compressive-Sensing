@@ -40,6 +40,8 @@ backend/
     │ Mesure.py
     │ Dictionnaire.py
     │ Metrics.py
+    │ projet_tableaux.py   # section 6 PDF : % mesures, cohérence Φ1–Φ4, erreurs relatives
+    │ graphiques_projet.py # courbes PSNR vs ratio (matplotlib optionnel)
 
 Data/
 ├── Dictionnaire/

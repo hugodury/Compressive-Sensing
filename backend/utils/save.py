@@ -34,18 +34,25 @@ def save_results(resultats: dict[str, Any], output_path: str) -> None:
 
     # 4. Sauvegarde des métriques dans un fichier CSV
     chemin_csv = os.path.join(dossier_sauvegarde, "metrics.csv")
-    with open(chemin_csv, mode='w', newline='') as fichier_csv:
+    extra_cols = ["pourcentage_mesures", "coherence_mutuelle_cours", "nb_mesures_M", "s_cosamp_utilise"]
+    sample = next(iter(resultats["metrics"].values()), {})
+    optionnelles = [c for c in extra_cols if c in sample]
+    with open(chemin_csv, mode="w", newline="", encoding="utf-8") as fichier_csv:
         writer = csv.writer(fichier_csv)
-        # En-têtes
-        writer.writerow(["Methode", "PSNR (dB)", "MSE", "Erreur Relative", "Temps (s)"])
-        # Données
+        entetes = ["Methode", "PSNR (dB)", "MSE", "Erreur Relative", "Temps (s)"]
+        entetes += [c.replace("_", " ").title() for c in optionnelles]
+        writer.writerow(entetes)
         for methode, metrics in resultats["metrics"].items():
-            writer.writerow([
+            ligne = [
                 methode.upper(),
                 round(metrics.get("psnr", 0), 2),
                 round(metrics.get("mse", 0), 4),
                 round(metrics.get("relative_error", 0), 4),
-                round(metrics.get("execution_time", 0), 2)
-            ])
+                round(metrics.get("execution_time", 0), 2),
+            ]
+            for c in optionnelles:
+                v = metrics.get(c, "")
+                ligne.append(round(v, 6) if isinstance(v, float) else v)
+            writer.writerow(ligne)
 
     print(f"\nRésultats (Images et CSV) sauvegardés dans :\n -> {dossier_sauvegarde}")

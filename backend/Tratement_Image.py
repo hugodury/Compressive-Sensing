@@ -168,12 +168,16 @@ def patch(
     s_cosamp_auto: bool = False,
     n_iter_ksvd: int = 0,
     ksvd_train_patches: int | None = None,
+    dictionary_train_image_path: str | None = None,
 ) -> Any:
     """
     Découpe une image en patchs (vecteurs colonnes).
 
     Si on fournit aussi une information de mesure (par ex. `ratio` ou `M` ou `Phi`) et un dictionnaire `D`,
     la fonction peut aussi reconstruire l'image (decoder BCS) et renvoyer l’image reconstruite.
+
+    `dictionary_train_image_path` (sujet §7) : pour mixte / K-SVD, apprend ou initialise `D` à partir des patchs
+    de cette image ; la reconstruction utilise toujours les patchs de `image_path`.
     """
     # 1) Découpage : on lit l'image sous forme de matrice 2D puis on découpe en blocs.
     X = load_grayscale_matrix(image_path)
@@ -184,6 +188,19 @@ def patch(
         ncols=ncols,
         order=order,
     )
+
+    # Patchs pour apprendre / initialiser D (sujet §7 : image hors entraînement)
+    matrice_pour_dictionnaire = matrice_patchs
+    if dictionary_train_image_path:
+        Xd = load_grayscale_matrix(dictionary_train_image_path)
+        matrice_pour_dictionnaire, _ = image_to_patch_vectors(
+            Xd, B=B, nrows=nrows, ncols=ncols, order=order
+        )
+        if matrice_pour_dictionnaire.shape[0] != matrice_patchs.shape[0]:
+            raise ValueError(
+                "dictionary_train_image_path : les patchs doivent avoir la même dimension N que l'image à reconstruire "
+                "(même B et même grille nrows×ncols)."
+            )
 
     # 2) Sortie “par défaut” : uniquement les patchs.
     out: dict[str, Any] = {
@@ -198,7 +215,11 @@ def patch(
 
     # --- Reconstruction (decoder BCS) ---
     # Import local pour éviter les imports circulaires.
-    from backend.utils.mesure import generate_measurement_matrix, apply_measurement
+    from backend.utils.mesure import (
+        apply_measurement,
+        compute_coherence_cours_phi_d,
+        generate_measurement_matrix,
+    )
     from backend.utils.Methode import (
         basis_pursuit,
         cosamp,
@@ -216,6 +237,7 @@ def patch(
     )
 
     N, NB = matrice_patchs.shape
+    NB_d = int(matrice_pour_dictionnaire.shape[1])
     n1, n2, nr, nc = meta
     B_eff = n1 // nr
 
@@ -238,11 +260,11 @@ def patch(
         dt = dictionary_type.lower().strip()
         K = int(n_atoms) if n_atoms is not None else N
         K = min(K, N)
-        L_train = NB if ksvd_train_patches is None else min(int(ksvd_train_patches), NB)
+        L_train = NB_d if ksvd_train_patches is None else min(int(ksvd_train_patches), NB_d)
 
         def _run_ksvd(init_m: str, nit: int) -> np.ndarray:
             D_loc, _ = learn_ksvd_full(
-                matrice_patchs,
+                matrice_pour_dictionnaire,
                 K,
                 nit,
                 init=init_m,
@@ -277,7 +299,7 @@ def patch(
             else:
                 from backend.utils.Dictionnaire import init_dictionnaire_mixte_dct_patches
 
-                D = init_dictionnaire_mixte_dct_patches(matrice_patchs, K)
+                D = init_dictionnaire_mixte_dct_patches(matrice_pour_dictionnaire, K)
         elif dt in ("ksvd", "ksvd_random"):
             nit = n_iter_ksvd if n_iter_ksvd > 0 else 10
             D = _run_ksvd("random", nit)
@@ -312,11 +334,11 @@ def patch(
     s_eff_cosamp = int(s_cosamp)
     if method.lower().strip() == "cosamp" and s_cosamp_auto:
         s_eff_cosamp = estime_ordre_parcimonie_cosamp(
-            matrice_patchs,
+            matrice_pour_dictionnaire,
             D,
             max_iter_omp=max_iter,
             epsilon=epsilon,
-            max_echantillons=min(64, NB),
+            max_echantillons=min(64, NB_d),
             seed=seed,
         )
 
@@ -392,8 +414,19 @@ def patch(
         X_rec[i0 : i0 + B_eff, j0 : j0 + B_eff] = x_hat.reshape(B_eff, B_eff, order=order)
 
     out["image_reconstruite"] = X_rec
+    if NB_used < NB:
+        out["reconstruction_partielle"] = True
+        out["nb_patchs_reconstruits"] = int(NB_used)
+        out["nb_patchs_total"] = int(NB)
     out["phi"] = Phi
     out["D"] = D
+    M_phi, N_phi = Phi.shape
+    out["nb_mesures_M"] = int(M_phi)
+    out["dim_patch_N"] = int(N_phi)
+    out["pourcentage_mesures"] = float(100.0 * M_phi / N_phi)
+    out["coherence_mutuelle_cours"] = float(compute_coherence_cours_phi_d(Phi, D))
+    if dictionary_train_image_path:
+        out["dictionary_train_image_path"] = dictionary_train_image_path
     if ksvd_meta is not None:
         out["ksvd_meta"] = ksvd_meta
     if ratio is not None or M is not None or Phi is not None:
