@@ -1,142 +1,90 @@
-# Compressive-Sensing
+# Compressive sensing — reconstruction d’images (ING2)
 
-Projet ING2 (CY Tech) : block compressive sensing, reconstruction patch par patch, dictionnaires DCT / mixte / K-SVD, matrices Φ₁–Φ₄ du cours.
+Petit pipeline de block compressive sensing : on découpe l’image en blocs, on simule des mesures `y = Φx` par patch, on cherche des coefficients parcimonieux dans un dictionnaire `D` (souvent DCT, parfois appris au K-SVD), puis on recolle les blocs. Le code vit dans `backend/`, l’entrée simple est `main.py`.
 
-## Dépendances
+## Installation
 
-À la racine du dépôt :
+Depuis la racine du projet :
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate   # Windows : .venv\Scripts\activate
+source .venv/bin/activate
 pip install numpy pillow scipy
 ```
 
-- **scipy** : BP/LP (`linprog`).
-- **matplotlib** (optionnel) : courbes PSNR vs ratio (`backend.utils.graphiques_projet`).
+`scipy` sert surtout pour BP/LP. Pour tracer des courbes PSNR en fonction du ratio, ajoute `matplotlib` si besoin.
 
-Lancer les scripts **depuis la racine** du repo, sinon les imports `backend.*` échouent.
+Toutes les commandes ci-dessous supposent que tu es **à la racine du repo** (sinon `import backend` ne marchera pas).
 
----
+## Lancer une reco
 
-## Conformité sujet PDF « Projet CS – Stockage images » (backend)
-
-| Partie du sujet | Exigence | Où c’est fait |
-|-----------------|----------|----------------|
-| §3 BCS | Découpage B×B, yⱼ = Φ_B xⱼ, reco x̂ⱼ | `Tratement_Image.patch`, `mesure.py` |
-| §4 K-SVD | Entraîner D sur imagettes, comparer à DCT | `Dictionnaire.learn_ksvd_full`, `dictionary_type` + `n_iter_ksvd` |
-| §5.1 | MP, OMP, StOMP | `Methode.py` |
-| §5.1 | CoSaMP + ordre s (dont déduction depuis KSVD) | `cosamp`, `s_cosamp_auto` + `estime_ordre_parcimonie_cosamp` |
-| §5.2 IRLS ℓp | Implémentation (démos théoriques = rapport) | `irls` |
-| Cours / pipeline | BP, LP, LASSO | `basis_pursuit`, `lp`, `lasso_ista` |
-| §6 | P ∈ {15,…,75} %, M = ⌈PN/100⌉ | `mesure.pourcentage_vers_M`, `POURCENTAGES_MESURES_PROJET` |
-| §6 | Φ₁…Φ₄, tableau cohérence μ(Φ,D) | `resolve_measurement_mode` (phi1…phi4), `compute_coherence_cours_phi_d`, `projet_tableaux.py` |
-| §6 | 3 vecteurs, erreurs relatives MP…IRLS | `trois_vecteurs_validation`, `tableau_erreurs_relatives_vecteurs`, CSV exportés |
-| §7 | Image **hors** entraînement du dictionnaire | `dictionary_train_image_path` dans `patch` / `main` / `setupParam` (D appris sur une autre image) |
-| §7 | Métriques + graphiques | `Metrics.py`, `save_results`, `graphiques_projet.sweep_ratios_psnr` |
-| Bonus IHM | Interface | Non réalisé (`frontend/` volontairement hors périmètre) |
-
-Les questions purement **mathématiques / rédaction** (§5.2 reformulations, commentaires des tableaux, critique) restent du **rapport**, pas du dépôt.
-
----
-
-## Lancer le pipeline principal
-
-`main.py` → `main_backend` : découpage, mesures, reconstruction, métriques.
-
-**`ratio`** dans `setupParam` / `main` : **fraction** dans `]0, 1]` (ex. `0.25`) **ou** **pourcentage** dans `]0, 100]` (ex. `25`), comme dans `patch`.
+Le script par défaut attend une image `lena.jpg` à la racine (à toi de la mettre ou de changer le chemin dans `main.py`).
 
 ```bash
-cd /path/to/compressive
 python3 main.py
 ```
 
-Exemple rapide (OMP + IRLS, peu de patchs) :
-
-```bash
-python3 -c "
-from main import main
-r = main(
-    image_path='lena.jpg',
-    block_size=8,
-    ratio=25,
-    methodes=['omp', 'irls'],
-    dictionary_type='dct',
-    measurement_mode='phi4',
-    patch_params={'max_patches': 30},
-    method_params={
-        'omp': {'max_iter': 40, 'epsilon': 1e-6},
-        'irls': {'max_iter': 80, 'norm_p': 0.5},
-    },
-)
-print(r['metrics'])
-"
-```
-
-### §7 — Dictionnaire appris sur une autre image
+Sinon, depuis Python :
 
 ```python
-main(
-    image_path="test.png",              # image à reconstruire
-    dictionary_train_image_path="train.png",  # patchs pour mixte / K-SVD uniquement
-    dictionary_type="ksvd_mixte",
-    n_iter_ksvd=5,
-    ...
+from main import main
+
+r = main(
+    image_path="ton_image.png",
+    block_size=8,
+    ratio=0.25,      # ou 25 pour 25 % de mesures
+    methodes=["omp", "cosamp"],
+    dictionary_type="dct",
+    measurement_mode="phi4",   # ou gaussian, phi1, etc.
+    patch_params={"max_patches": 50},   # enlève ça pour toute l’image
+    method_params={
+        "omp": {"max_iter": 40, "epsilon": 1e-6},
+        "cosamp": {"s": 6, "max_iter": 30},
+    },
+    seed=42,
 )
-# ou patch_params={'dictionary_train_image_path': 'train.png'}
+print(r["metrics"])
 ```
 
-Même **B** et même grille (`nrows` / `ncols` dans `patch_params` si tu les fixes) pour que N = B² soit identique.
+Pour sauver images + CSV dans `Data/Result/<date>/` :
 
----
+```python
+from backend.utils.save import save_results
+save_results(r, "Data/Result")
+```
 
-## Tableaux section 6 (CSV)
+## Comment ça marche (résumé)
+
+1. `Tratement_Image.patch` découpe l’image en patchs, construit `Φ` (`mesure.py`), éventuellement `D` (`Dictionnaire.py`), puis pour chaque patch résout quelque chose du type `(ΦD)α ≈ y` avec MP, OMP, StOMP, CoSaMP, IRLS, BP, LASSO, etc. (`Methode.py`).
+2. `main_backend` enchaîne les méthodes demandées et calcule PSNR / MSE / temps (`Metrics.py`).
+
+StOMP utilise surtout le seuil `t` ; CoSaMP utilise `s`, ou bien `s_cosamp_auto` dans `patch_params` pour estimer `s` à partir d’OMP sur les patchs (utile quand `D` vient du K-SVD).
+
+## Paramètres utiles
+
+- **Bloc** : `block_size` (= B), ou grille via `patch_params` : `nrows`, `ncols`, `order`.
+- **Mesures** : `ratio` (entre 0 et 1 = fraction, entre 1 et 100 = pourcentage) ou `M` / `patch_params["M"]`. Mode de `Φ` : `measurement_mode` ou `patch_params["mode_phi"]` (`phi1` … `phi4` comme au cours, ou `gaussian`, `uniform`, etc.).
+- **Dictionnaire** : `dictionary_type` (`dct`, `mixte`, `ksvd_dct`, …), `n_atoms`, `n_iter_ksvd`, `ksvd_train_patches`. Pour le sujet §7 (image test ≠ image d’entraînement) : `dictionary_train_image_path` dans `main` ou dans `patch_params`.
+- **Solveurs** : dans `method_params[nom_méthode]` : `max_iter`, `epsilon`, pour StOMP `t`, pour CoSaMP `s`, pour IRLS `norm_p`, etc.
+
+Si tu mets `max_patches` plus petit que le nombre réel de blocs, seule une partie de l’image est reconstruite — le reste reste à zéro (effet visuel brutal, normal).
+
+## Tableaux du sujet (section 6)
+
+Un module génère les CSV (M pour chaque %, cohérence mutuelle Φ₁–Φ₄, erreurs sur trois vecteurs test) :
 
 ```bash
 python3 -m backend.utils.projet_tableaux
 ```
 
-Génère sous `Data/Result/jj.mm.hh.mm/Graph/` : `M_pour_P.csv`, `coherence_mutuelle.csv`, `erreurs_relatives_vecteur*.csv`.  
-Tu peux passer ton propre `D` appris (charger `.npy` puis `exporter_tableaux_section6(D, N, ...)` en Python).
+Sortie typique : `Data/Result/<jj.mm.hh.mm>/Graph/`. Tu peux aussi appeler `exporter_tableaux_section6` depuis Python avec ton propre `D`.
 
----
+Courbes PSNR vs plusieurs ratios : voir `backend/utils/graphiques_projet.py` (nécessite matplotlib).
 
-## Graphiques PSNR vs ratio
+## Déjà fait / pas fait
 
-```python
-from main import setupParam
-from backend.utils.graphiques_projet import exporter_sweep_graphique
+**Côté code backend** : BCS, dictionnaires DCT + mixte + K-SVD, méthodes demandées dans le sujet et extensions type BP/LP/LASSO, matrices de mesure du cours (dont alias `phi1`–`phi4`), tableaux §6, métriques, sauvegarde, option image d’entraînement séparée pour le dico, scripts de graphes.
 
-params = setupParam(
-    image_path="lena.jpg",
-    block_size=8,
-    ratio=0.25,
-    methodes=["omp", "mp"],
-    dictionary_type="dct",
-    measurement_mode="phi4",
-    patch_params={"max_patches": 40},
-)
-exporter_sweep_graphique(params, [15, 25, 50, 75], output_path="Data/Result")
-```
+**Pas dans ce dépôt** : l’interface graphique (bonus IHM), et tout ce qui est **rapport** : rédaction, commentaires des résultats, démos math du PDF §5.2, choix argumenté des réglages pour les figures.
 
-Nécessite `pip install matplotlib`.
-
----
-
-## Découpage seul (`patch`)
-
-```bash
-python3 -c "from backend.Tratement_Image import patch; print(patch('lena.jpg', B=8, as_dict=True)['matrice_patchs'].shape)"
-```
-
-**Qualité de reconstruction :** ne pas utiliser `max_patches` inférieur au nombre total de patchs pour une image « finale » : les blocs non traités restent à **0** (zones noires). Pour un test rapide c’est OK ; pour un rendu visuel, omettre `max_patches` ou le mettre au nombre total de patchs. Les images très « hachées » (damier, bruit fin) sont **peu parcimonieuses en DCT** : avec peu de mesures (petit ratio), le CS donne un PSNR médiocre — c’est attendu ; préférer des images naturelles et un ratio plus élevé (ex. 50–75 %).
-
----
-
-## Référence rapide code
-
-- **Mesures** : `gaussian`, `uniform`, `bernoulli_1`, `bernoulli_01` ou **`phi1`…`phi4`**.
-- **Dictionnaires** : `dct`, `mixte`, `ksvd_*`, `n_iter_ksvd`, `ksvd_train_patches`, `dictionary_train_image_path`.
-- **Cohérence cours** : `coherence_mutuelle_cours` dans la sortie `patch` et dans les métriques `main_backend` ; CSV métriques enrichi dans `save_results` si présent.
-
-Le fichier `fonction.md` décrit l’arborescence cible (dont `projet_tableaux.py`, `graphiques_projet.py`).
+Pour l’arborescence des fichiers visée par le sujet, voir aussi `fonction.md`.
