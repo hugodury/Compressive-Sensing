@@ -15,6 +15,7 @@ import traceback
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from frontend.scroll_host import build_vertical_scroll_host
 from frontend.state import AppState
 from frontend.theme import apply_theme
 from frontend.utils import ensure_project_root
@@ -59,6 +60,7 @@ class CompressiveSensingApp(tk.Tk):
         self.notebook.pack(fill="both", expand=True, padx=18, pady=(10, 16))
 
         self.pages: dict[str, ttk.Frame] = {}
+        self._scroll_canvases: list[tk.Canvas] = []
         self._add_page("Accueil", HomePage)
         self._add_page("Reconstruction", ReconstructionPage)
         self._add_page("Résultats", ResultsPage)
@@ -66,12 +68,74 @@ class CompressiveSensingApp(tk.Tk):
         self._add_page("Cohérence & erreurs", Section6Page)
         self._add_page("Patchs", PatchesPage)
 
+        self._bind_global_mousewheel()
         self.refresh_all_pages()
 
+    def register_scroll_canvas(self, canvas: tk.Canvas) -> None:
+        if canvas not in self._scroll_canvases:
+            self._scroll_canvases.append(canvas)
+
+    def _closest_scroll_canvas(self, w: tk.Misc | None) -> tk.Canvas | None:
+        if w is None:
+            return None
+        best: tk.Canvas | None = None
+        best_d = 10_000
+        for c in self._scroll_canvases:
+            d = 0
+            cur: tk.Misc | None = w
+            while cur is not None:
+                if cur is c:
+                    if d < best_d:
+                        best = c
+                        best_d = d
+                    break
+                cur = getattr(cur, "master", None)
+                d += 1
+        return best
+
+    def _bind_global_mousewheel(self) -> None:
+        def on_wheel(ev: tk.Event) -> None:
+            if getattr(ev, "num", None) == 4 or (getattr(ev, "delta", 0) or 0) > 0:
+                delta = -1
+            elif getattr(ev, "num", None) == 5 or (getattr(ev, "delta", 0) or 0) < 0:
+                delta = 1
+            else:
+                return
+            try:
+                x, y = self.winfo_pointerxy()
+                w = self.winfo_containing(x, y)
+            except tk.TclError:
+                return
+            c = self._closest_scroll_canvas(w)
+            if c is None:
+                return
+            try:
+                if not c.winfo_ismapped():
+                    return
+            except tk.TclError:
+                return
+            c.yview_scroll(delta * 3, "units")
+
+        self.bind_all("<MouseWheel>", on_wheel)
+        self.bind_all("<Button-4>", on_wheel)
+        self.bind_all("<Button-5>", on_wheel)
+
     def _add_page(self, title: str, page_cls) -> None:
-        page = page_cls(self.notebook, self)
+        if page_cls is ReconstructionPage:
+            page = page_cls(self.notebook, self)
+            self.pages[title] = page
+            self.notebook.add(page, text=title)
+            return
+
+        shell = ttk.Frame(self.notebook, style="App.TFrame")
+        shell.columnconfigure(0, weight=1)
+        shell.rowconfigure(0, weight=1)
+        canvas, inner, _vsb = build_vertical_scroll_host(shell)
+        self.register_scroll_canvas(canvas)
+        page = page_cls(inner, self)
         self.pages[title] = page
-        self.notebook.add(page, text=title)
+        page.pack(anchor="nw", fill="x", expand=False)
+        self.notebook.add(shell, text=title)
 
     def refresh_all_pages(self) -> None:
         for title, page in self.pages.items():

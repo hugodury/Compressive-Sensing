@@ -37,7 +37,11 @@ class Section6Page(BasePage):
         ttk.Label(self, text="Cohérence mutuelle, mesures et erreurs", style="Title.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Label(
             self,
-            text="Export CSV : M pour chaque %, cohérence μ(Φ,D), erreurs relatives. Après génération, les tableaux s’affichent ci‑dessous (vue structurée + texte intégral).",
+            text=(
+                "Fichiers : M pour chaque pourcentage, cohérence mutuelle μ(Φ,D), et un seul CSV « erreurs_relatives.csv » "
+                "avec la colonne vecteur_test = 1, 2 ou 3 (trois signaux de validation reproductibles, pas trois fichiers séparés). "
+                "Après génération, sélection automatique du tableau de cohérence ; choisissez un autre fichier dans la liste pour l’aperçu."
+            ),
             style="Muted.TLabel",
             wraplength=980,
             justify="left",
@@ -64,8 +68,18 @@ class Section6Page(BasePage):
         ttk.Checkbutton(form, text="Inclure les erreurs relatives", variable=self.vars["with_errors"]).grid(
             row=7, column=0, columnspan=2, sticky="w", pady=(8, 0)
         )
+        ttk.Label(
+            form,
+            text=(
+                "Si coché : un fichier erreurs_relatives.csv regroupe les trois vecteurs de test ; chaque ligne indique "
+                "vecteur_test (1–3), Φ, méthode et l’erreur relative pour chaque pourcentage P."
+            ),
+            style="Hint.TLabel",
+            wraplength=720,
+            justify="left",
+        ).grid(row=8, column=0, columnspan=2, sticky="w", pady=(4, 0))
         ttk.Button(form, text="Générer les tableaux", style="Primary.TButton", command=self.generate_tables).grid(
-            row=8, column=0, columnspan=2, sticky="ew", pady=(14, 0)
+            row=9, column=0, columnspan=2, sticky="ew", pady=(14, 0)
         )
         form.columnconfigure(1, weight=1)
 
@@ -236,12 +250,17 @@ class Section6Page(BasePage):
         if after_generate and csv_paths:
             preferred = 0
             for i, p in enumerate(csv_paths):
-                n = p.name.lower()
-                if "coherence" in n:
+                if "coherence" in p.name.lower():
                     preferred = i
                     break
-                if "m_pour" in n:
-                    preferred = i
+            else:
+                for i, p in enumerate(csv_paths):
+                    n = p.name.lower()
+                    if n == "erreurs_relatives.csv" or ("erreurs" in n and "relatives" in n):
+                        preferred = i
+                        break
+                    if "m_pour" in n:
+                        preferred = i
             self.files_list.selection_clear(0, tk.END)
             self.files_list.selection_set(preferred)
             self.files_list.see(preferred)

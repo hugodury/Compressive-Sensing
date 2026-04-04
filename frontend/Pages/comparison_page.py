@@ -117,7 +117,7 @@ class ComparisonPage(BasePage):
 
     def _combo(self, parent: ttk.Frame, row: int, label: str, key: str, values: list[str]) -> None:
         ttk.Label(parent, text=label, style="CardBody.TLabel").grid(row=row, column=0, sticky="w", padx=(0, 10), pady=4)
-        ttk.Combobox(parent, textvariable=self.vars[key], values=values, state="readonly", width=36).grid(
+        ttk.Combobox(parent, textvariable=self.vars[key], values=values, state="readonly", width=68).grid(
             row=row, column=1, sticky="ew", pady=4
         )
 

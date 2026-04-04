@@ -6,3 +6,6 @@ __pycache__/
 .venv/
 venv/
 .env
+
+# Sorties locales (reco, CSV, patch_vis, etc.)
+Data/Result/

@@ -207,18 +207,18 @@ def _ecrire_csv_coherence(chemin: str, data: dict[str, Any]) -> None:
             w.writerow(row)
 
 
-def _ecrire_csv_erreurs(chemin_base: str, erreurs: dict[str, Any]) -> None:
-    for bloc in erreurs["par_vecteur"]:
-        v = bloc["indice"]
-        ps: list[int] = erreurs["pourcentages"]
-        path = f"{chemin_base}_vecteur{v}.csv"
-        fieldnames = ["Phi", "methode"] + [f"P_{p}" for p in ps]
-        with open(path, "w", newline="", encoding="utf-8") as f:
-            w = csv.DictWriter(f, fieldnames=fieldnames)
-            w.writeheader()
+def _ecrire_csv_erreurs(chemin_csv: str, erreurs: dict[str, Any]) -> None:
+    """Un seul fichier : colonne ``vecteur_test`` ∈ {1,2,3} pour les trois signaux de validation reproductibles."""
+    ps: list[int] = erreurs["pourcentages"]
+    fieldnames = ["vecteur_test", "Phi", "methode"] + [f"P_{p}" for p in ps]
+    with open(chemin_csv, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=fieldnames)
+        w.writeheader()
+        for bloc in erreurs["par_vecteur"]:
+            v = int(bloc["indice"])
             for phi_label, par_meth in bloc["details"].items():
                 for meth, vals in par_meth.items():
-                    row: dict[str, Any] = {"Phi": phi_label, "methode": meth}
+                    row: dict[str, Any] = {"vecteur_test": v, "Phi": phi_label, "methode": meth}
                     for p in ps:
                         row[f"P_{p}"] = round(vals[int(p)], 6)
                     w.writerow(row)
@@ -237,7 +237,7 @@ def exporter_tableaux_section6(
     Crée un dossier horodaté (jj.mm.hh.mm) sous ``output_dir`` avec un sous-dossier ``Graph`` contenant :
     - ``M_pour_P.csv`` : P → M
     - ``coherence_mutuelle.csv``
-    - ``erreurs_relatives_vecteur*.csv`` si demandé
+    - ``erreurs_relatives.csv`` si demandé (colonne ``vecteur_test`` = 1, 2 ou 3)
 
     Retourne le chemin du dossier ``Graph`` (là où sont les CSV).
     """
@@ -260,7 +260,7 @@ def exporter_tableaux_section6(
         err = tableau_erreurs_relatives_vecteurs(
             vecs, D, seed=seed, max_iter=max_iter,
         )
-        _ecrire_csv_erreurs(os.path.join(dossier, "erreurs_relatives"), err)
+        _ecrire_csv_erreurs(os.path.join(dossier, "erreurs_relatives.csv"), err)
 
     print(f"Tableaux exportés dans :\n -> {dossier}")
     # Dossier contenant directement les CSV (sous-dossier « Graph » horodaté).

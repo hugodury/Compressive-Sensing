@@ -41,16 +41,16 @@ PHI_MEASUREMENT_MODES: tuple[str, ...] = PHI_COURS_KEYS
 DICTIONARY_TYPES_ALL: tuple[str, ...] = ("dct", "mixte", "ksvd", "ksvd_dct", "ksvd_mixte", "ksvd_random")
 
 DICTIONARY_UI_LABELS: dict[str, str] = {
-    "dct": "DCT",
-    "mixte": "Mixte (DCT + patchs)",
-    "ksvd": "K-SVD (init. aléatoire)",
-    "ksvd_dct": "K-SVD (init. DCT)",
-    "ksvd_mixte": "K-SVD (init. mixte)",
+    "dct": "DCT seule — base 2D fixe (aucun apprentissage)",
+    "mixte": "Mixte — moitié DCT + moitié colonnes tirées des patchs de l’image",
+    "ksvd": "K-SVD — init. aléatoire (colonnes patchs), puis itérations",
+    "ksvd_dct": "K-SVD — initialisation DCT tronquée puis itérations sur les patchs",
+    "ksvd_mixte": "K-SVD — initialisation mixte (DCT+patchs) puis itérations sur les patchs",
     "ksvd_random": "K-SVD (init. aléatoire, alias)",
 }
 
-# Choix proposés dans l’IHM (les plus utilisés)
-DICTIONARY_TYPES_UI: tuple[str, ...] = ("dct", "mixte", "ksvd_dct", "ksvd_mixte")
+# Choix proposés dans l’IHM (alignés sur ``Tratement_Image`` : dct, mixte, ksvd, ksvd_dct, ksvd_mixte)
+DICTIONARY_TYPES_UI: tuple[str, ...] = ("dct", "mixte", "ksvd", "ksvd_dct", "ksvd_mixte")
 
 DICTIONARY_COMBO_TEXT: list[str] = [f"{k} — {DICTIONARY_UI_LABELS[k]}" for k in DICTIONARY_TYPES_UI]
 DICTIONARY_COMBO_TO_KEY: dict[str, str] = {f"{k} — {DICTIONARY_UI_LABELS[k]}": k for k in DICTIONARY_TYPES_UI}
@@ -99,8 +99,11 @@ UI_HELP_METHODS_BLOC = (
 )
 
 UI_HELP_DICT_BLOC = (
-    "DCT : base fixe. Mixte : DCT complété par des patchs. K-SVD : dictionnaire appris "
-    "(n_iter_K-SVD > 0 lance l’optimisation). L’image d’entraînement sert à apprendre D sur une autre image que la cible si vous la renseignez."
+    "D est N×K (N = B²), atomes en colonnes ; α parcimonieux avec x ≈ Dα et y = Φx. Le menu reprend les clés backend. "
+    "K-SVD = algorithme d’apprentissage dans `Dictionnaire.learn_ksvd_full` (OMP interne + mise à jour des atomes). "
+    "Réglez « Itérations K-SVD » > 0 pour l’apprentissage ; pour « ksvd » / « ksvd_dct » / « ksvd_mixte », si vous mettez 0, "
+    "le code utilise tout de même un défaut (ex. 10 itérations) car ce sont des modes « K-SVD ». "
+    "K ≤ N (vide = N). Détail par ligne du menu : voir les libellés du combo."
 )
 
 UI_HELP_EMPREINTE_RESULTS = (
@@ -281,20 +284,97 @@ def co2eq_par_methode_prorata_temps(
     return {k: f"{total_co2 / n:.4f}" for k in keys}
 
 
+def build_pipeline_diagram_figure() -> Figure:
+    """
+    Schéma du flux réellement exécuté (découpage → mesure → solveur → recomposition).
+    Affiché sur l’accueil pour compléter la lecture de ``main.py`` / ``main_backend``.
+    """
+    fig = Figure(figsize=(11.4, 3.15), facecolor="#f8fafc")
+    ax = fig.add_subplot(111, facecolor="#f8fafc")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.axis("off")
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.84, bottom=0.11)
+
+    labels = (
+        "1 · Image I\n(niveaux de gris)",
+        "2 · Patchs\nx ∈ ℝᴺ, N=B²",
+        "3 · Mesure\ny = Φ x",
+        "4 · D + solveur\nα̂ parcimonieux",
+        "5 · Patch estimé\nx̂ ≈ D α̂",
+        "6 · Image Î\nrecollement",
+    )
+    face_alt = ("#eef4fc", "#e4edf7", "#eef4fc", "#e4edf7", "#eef4fc", "#e4edf7")
+    n = len(labels)
+    centers = [(i + 0.5) / n for i in range(n)]
+    half = 0.34 / n
+    for xc, lab, fc in zip(centers, labels, face_alt):
+        ax.text(
+            xc,
+            0.48,
+            lab,
+            ha="center",
+            va="center",
+            fontsize=8.4,
+            linespacing=1.18,
+            bbox={
+                "boxstyle": "round,pad=0.34",
+                "facecolor": fc,
+                "edgecolor": "#1e5a8e",
+                "linewidth": 1.15,
+            },
+        )
+    for i in range(n - 1):
+        x0, x1 = centers[i] + half, centers[i + 1] - half
+        ax.annotate(
+            "",
+            xy=(x1, 0.48),
+            xytext=(x0, 0.48),
+            arrowprops={
+                "arrowstyle": "-|>",
+                "color": "#334155",
+                "lw": 1.45,
+                "mutation_scale": 12,
+                "shrinkA": 2,
+                "shrinkB": 2,
+            },
+        )
+    ax.text(
+        0.5,
+        0.93,
+        "Pipeline logiciel (chaîne patch par patch — main_backend / Tratement_Image)",
+        ha="center",
+        va="center",
+        fontsize=10.5,
+        fontweight="bold",
+        color="#0f172a",
+    )
+    ax.text(
+        0.5,
+        0.055,
+        "Φ : Φ₁…Φ₄  ·  D : DCT fixe, mixte DCT+patchs, ou K-SVD (init. aléatoire / DCT / mixte)",
+        ha="center",
+        va="center",
+        fontsize=8,
+        color="#475569",
+    )
+    return fig
+
+
 def build_metrics_figure(metrics_by_method: dict[str, dict[str, Any]]) -> Figure:
     keys = list(metrics_by_method.keys())
     methods_lbl = [str(m).upper() for m in keys]
     psnr = [float(metrics_by_method[m].get("psnr", 0.0)) for m in keys]
     mse = [float(metrics_by_method[m].get("mse", 0.0)) for m in keys]
 
-    fig = Figure(figsize=(9.2, 4.0), dpi=100)
+    fig = Figure(figsize=(12.5, 5.2), dpi=110)
     fig.patch.set_facecolor("#ffffff")
     fig.suptitle(
         "Qualité de reconstruction par méthode",
-        fontsize=12,
+        fontsize=14,
         fontweight="bold",
         color="#0f172a",
-        y=0.98,
+        y=0.97,
     )
 
     color_psnr = "#1d4ed8"
@@ -303,26 +383,26 @@ def build_metrics_figure(metrics_by_method: dict[str, dict[str, Any]]) -> Figure
     ax2 = fig.add_subplot(122)
     for ax in (ax1, ax2):
         ax.set_facecolor("#f8fafc")
-        ax.tick_params(axis="both", labelsize=9, colors="#334155")
+        ax.tick_params(axis="both", labelsize=11, colors="#334155")
         for spine in ax.spines.values():
-            spine.set_linewidth(0.8)
+            spine.set_linewidth(0.9)
             spine.set_color("#cbd5e1")
 
-    ax1.bar(methods_lbl, psnr, color=color_psnr, edgecolor="#1e40af", linewidth=0.8, alpha=0.92, zorder=2)
-    ax1.set_title("PSNR", fontsize=10, fontweight="bold", color="#1e293b", pad=8)
-    ax1.set_ylabel("dB", fontsize=9)
-    ax1.tick_params(axis="x", rotation=22)
+    ax1.bar(methods_lbl, psnr, color=color_psnr, edgecolor="#1e40af", linewidth=0.9, alpha=0.92, zorder=2)
+    ax1.set_title("PSNR (plus haut = mieux)", fontsize=12, fontweight="bold", color="#1e293b", pad=10)
+    ax1.set_ylabel("dB", fontsize=11)
+    ax1.tick_params(axis="x", rotation=28)
     ax1.grid(axis="y", linestyle="--", alpha=0.45, color="#94a3b8", zorder=0)
     ax1.set_axisbelow(True)
 
-    ax2.bar(methods_lbl, mse, color=color_mse, edgecolor="#115e59", linewidth=0.8, alpha=0.92, zorder=2)
-    ax2.set_title("MSE", fontsize=10, fontweight="bold", color="#1e293b", pad=8)
-    ax2.set_ylabel("Erreur quadratique moyenne", fontsize=9)
-    ax2.tick_params(axis="x", rotation=22)
+    ax2.bar(methods_lbl, mse, color=color_mse, edgecolor="#115e59", linewidth=0.9, alpha=0.92, zorder=2)
+    ax2.set_title("MSE (plus bas = mieux)", fontsize=12, fontweight="bold", color="#1e293b", pad=10)
+    ax2.set_ylabel("Erreur quadratique moyenne", fontsize=11)
+    ax2.tick_params(axis="x", rotation=28)
     ax2.grid(axis="y", linestyle="--", alpha=0.45, color="#94a3b8", zorder=0)
     ax2.set_axisbelow(True)
 
-    fig.subplots_adjust(top=0.86, bottom=0.18, left=0.08, right=0.98, wspace=0.28)
+    fig.subplots_adjust(top=0.88, bottom=0.20, left=0.09, right=0.98, wspace=0.30)
     return fig
 
 

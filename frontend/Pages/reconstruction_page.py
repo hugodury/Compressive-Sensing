@@ -83,36 +83,7 @@ class ReconstructionPage(BasePage):
         canvas.grid(row=0, column=0, sticky="nsew")
         vsb.grid(row=0, column=1, sticky="ns")
         left_wrap.columnconfigure(0, weight=1)
-
-        # Molette : détection par position du pointeur (fiable Windows / Linux ; évite les autres onglets)
-        topv = canvas.winfo_toplevel()
-        scroll_zone_widgets = frozenset({canvas, scroll_inner, vsb})
-
-        def _pointer_in_scroll_column() -> bool:
-            try:
-                x, y = topv.winfo_pointerxy()
-            except tk.TclError:
-                return False
-            if x <= 0 or y <= 0:
-                return False
-            w = topv.winfo_containing(x, y)
-            while w is not None:
-                if w in scroll_zone_widgets:
-                    return True
-                w = getattr(w, "master", None)
-            return False
-
-        def _on_mousewheel(ev: tk.Event) -> None:
-            if not _pointer_in_scroll_column():
-                return
-            if getattr(ev, "num", None) == 4 or (getattr(ev, "delta", 0) or 0) > 0:
-                canvas.yview_scroll(-1, "units")
-            elif getattr(ev, "num", None) == 5 or (getattr(ev, "delta", 0) or 0) < 0:
-                canvas.yview_scroll(1, "units")
-
-        topv.bind_all("<MouseWheel>", _on_mousewheel)
-        topv.bind_all("<Button-4>", _on_mousewheel)
-        topv.bind_all("<Button-5>", _on_mousewheel)
+        self.app.register_scroll_canvas(canvas)
 
         # — Colonne droite : méthodes + actions
         right = ttk.Frame(outer, style="Panel.TFrame")
@@ -206,7 +177,7 @@ class ReconstructionPage(BasePage):
             textvariable=self.vars["dictionary_type"],
             values=list(DICTIONARY_COMBO_TEXT),
             state="readonly",
-            width=42,
+            width=68,
         ).grid(row=0, column=1, sticky="ew", pady=4)
         lf_dict.columnconfigure(1, weight=1)
         self._simple_entry(lf_dict, 1, "Nombre d’atomes K (vide = N)", self.vars["n_atoms"])
@@ -220,42 +191,64 @@ class ReconstructionPage(BasePage):
         lf_sol.pack(fill="x", pady=(0, 10))
         self._simple_entry(lf_sol, 0, "max_iter (itératifs)", self.vars["max_iter"])
         self._simple_entry(lf_sol, 1, "epsilon (résidu / tol)", self.vars["epsilon"])
-        self._simple_entry(lf_sol, 2, "t StOMP (seuil)", self.vars["t_stomp"])
+        ttk.Label(
+            lf_sol,
+            text=(
+                "max_iter : nombre maximal d’itérations pour les méthodes itératives (OMP, MP, StOMP, CoSaMP, IRLS, LASSO). "
+                "Souvent 20–80 ; augmentez si la qualité stagne encore.\n"
+                "epsilon : critère d’arrêt sur le résidu (norme) ; typique 1e-6 à 1e-4. Plus petit = convergence plus poussée, calcul plus long."
+            ),
+            style="CardMuted.TLabel",
+            wraplength=620,
+            justify="left",
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        self._simple_entry(lf_sol, 3, "t StOMP (seuil)", self.vars["t_stomp"])
         ttk.Label(
             lf_sol,
             text="Indication : pour StOMP, t est souvent pris entre 2 et 3 (à ajuster selon le niveau de bruit).",
             style="CardMuted.TLabel",
             wraplength=560,
             justify="left",
-        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(0, 6))
-        self._simple_entry(lf_sol, 4, "s CoSaMP (fixe)", self.vars["s_cosamp"])
+        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(0, 6))
+        self._simple_entry(lf_sol, 5, "s CoSaMP (fixe)", self.vars["s_cosamp"])
         ttk.Checkbutton(
             lf_sol,
             text="CoSaMP : estimer s automatiquement (OMP sur patchs d’entraînement)",
             variable=self.vars["s_cosamp_auto"],
-        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=6)
-        self._simple_entry(lf_sol, 6, "p IRLS (norme ℓp)", self.vars["norm_p"])
+        ).grid(row=6, column=0, columnspan=2, sticky="w", pady=6)
+        self._simple_entry(lf_sol, 7, "p IRLS (norme ℓp)", self.vars["norm_p"])
         ttk.Label(
             lf_sol,
             text="IRLS : p dans ]0, 1[ (ex. 0,5). Pour ℓ1 pur, préférer BP ou LP.",
             style="CardMuted.TLabel",
             wraplength=560,
             justify="left",
-        ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(0, 6))
-        self._simple_entry(lf_sol, 8, "λ LASSO", self.vars["lambda_lasso"])
+        ).grid(row=8, column=0, columnspan=2, sticky="w", pady=(0, 6))
+        self._simple_entry(lf_sol, 9, "λ LASSO", self.vars["lambda_lasso"])
         ttk.Label(
             lf_sol,
             text="Indication : λ souvent entre 1e-4 et 1e-1 selon l’image et le bruit ; trop élevé = image trop lissée.",
             style="CardMuted.TLabel",
             wraplength=560,
             justify="left",
-        ).grid(row=9, column=0, columnspan=2, sticky="w", pady=(0, 6))
-        self._simple_entry(lf_sol, 10, "Limiter nb patchs reco (vide = image entière)", self.vars["max_patches"])
-        self._simple_entry(lf_sol, 11, "Seed reproductibilité", self.vars["seed"])
+        ).grid(row=10, column=0, columnspan=2, sticky="w", pady=(0, 6))
+        self._simple_entry(lf_sol, 11, "Limiter nb patchs reco (vide = image entière)", self.vars["max_patches"])
+        self._simple_entry(lf_sol, 12, "Seed reproductibilité", self.vars["seed"])
         ttk.Checkbutton(lf_sol, text="Arrêt si PSNR patch ≥ cible (expérimental)", variable=self.vars["psnr_stop"]).grid(
-            row=12, column=0, columnspan=2, sticky="w", pady=6
+            row=13, column=0, columnspan=2, sticky="w", pady=6
         )
-        self._simple_entry(lf_sol, 13, "PSNR cible (dB)", self.vars["psnr_target_db"])
+        self._simple_entry(lf_sol, 14, "PSNR cible (dB)", self.vars["psnr_target_db"])
+        ttk.Label(
+            lf_sol,
+            text=(
+                "PSNR cible : utilisé seulement si l’arrêt expérimental est coché. C’est le PSNR calculé entre l’original "
+                "et la reconstruction (image recadrée). Ordre de grandeur : ~30 dB souvent acceptable sur 8 bits, "
+                "35–40 dB bon, au-delà très bon selon le contenu. Une cible trop haute peut allonger le calcul sans gain visible."
+            ),
+            style="CardMuted.TLabel",
+            wraplength=620,
+            justify="left",
+        ).grid(row=15, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
         # --- Empreinte carbone (rapport / sensibilisation)
         lf_emp = ttk.LabelFrame(scroll_inner, text=" Empreinte carbone (estimation indicative) ", padding=12)
@@ -277,8 +270,8 @@ class ReconstructionPage(BasePage):
         ttk.Label(
             lf_auto,
             text=(
-                "Les images « étapes » dans Patchs montrent la recomposition progressive des blocs dans l’image recadrée "
-                "(aperçu pédagogique du découpage), pas les itérations internes d’un solveur.\n\n"
+                "L’onglet « Patchs » n’affiche que la grille B×B sur l’image recadrée (géométrie du découpage), "
+                "pas les itérations d’un solveur.\n\n"
                 "Ici : 12 combinaisons (ratio × Φ) × 8 méthodes = 96 évaluations sur un sous-ensemble de patchs. "
                 "Le PSNR est indicatif ; validez ensuite avec une reconstruction complète sur toute l’image."
             ),

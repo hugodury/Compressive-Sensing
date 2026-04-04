@@ -76,10 +76,17 @@ class ResultsPage(BasePage):
         card_chart = ttk.Frame(left, style="Card.TFrame", padding=14)
         card_chart.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
         card_chart.columnconfigure(0, weight=1)
-        card_chart.rowconfigure(1, weight=1)
+        card_chart.rowconfigure(2, weight=1)
         ttk.Label(card_chart, text="Synthèse graphique", style="CardTitle.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            card_chart,
+            text="PSNR en dB : plus c’est élevé, mieux c’est (souvent >30 dB utilisable, >40 dB très bon). MSE : plus bas = mieux.",
+            style="CardMuted.TLabel",
+            wraplength=520,
+            justify="left",
+        ).grid(row=1, column=0, sticky="w", pady=(4, 6))
         self.chart_label = ttk.Label(card_chart, style="CardBody.TLabel", anchor="center")
-        self.chart_label.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
+        self.chart_label.grid(row=2, column=0, sticky="nsew", pady=(4, 0))
 
         self.images_container = ttk.Frame(right, style="Card.TFrame", padding=14)
         self.images_container.grid(row=0, column=0, sticky="nsew")
@@ -159,8 +166,8 @@ class ResultsPage(BasePage):
 
         fig = build_metrics_figure(metrics)
         self.update_idletasks()
-        avail_w = max(420, min(1000, (self.winfo_width() or 900) - 140))
-        chart_photo = figure_to_photo(fig, max_width_px=avail_w)
+        avail_w = max(720, min(1280, (self.winfo_width() or 1000) - 100))
+        chart_photo = figure_to_photo(fig, max_width_px=avail_w, dpi=120)
         self._photos.append(chart_photo)
         self.chart_label.configure(image=chart_photo, text="")
 
