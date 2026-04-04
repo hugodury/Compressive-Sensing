@@ -11,7 +11,7 @@ from typing import Any
 
 import numpy as np
 from PIL import Image
-
+import cv2
 
 def load_grayscale_matrix(path: str, dtype: type = np.float64) -> np.ndarray:
     """Charge l'image et renvoie une matrice 2D de niveaux de gris."""
@@ -400,3 +400,18 @@ def patch(
         out["s_cosamp_utilise"] = int(s_eff_cosamp) if method.lower().strip() == "cosamp" else None
     return out if as_dict else out["image_reconstruite"]
 
+def apply_bilateral_filter(reconstructed_image: np.ndarray, d: int = 5, sigma_color: float = 75.0, sigma_space: float = 75.0) -> np.ndarray:
+    """
+    On applique un filtre bilatéral pour atténuer l'effet de bloc
+    
+    Paramètres :
+    - d : Diamètre du voisinage (plus il est grand, plus le lissage est large).
+    - sigma_color : Plus il est grand, plus des couleurs éloignées seront mélangées.
+    - sigma_space : Plus il est grand, plus les pixels éloignés influenceront le calcul.
+    """
+    img_float32 = np.clip(reconstructed_image, 0, 255).astype(np.float32)
+    
+    # Application du filtre
+    smoothed_img = cv2.bilateralFilter(img_float32, d, sigma_color, sigma_space)
+
+    return smoothed_img.astype(np.float64)

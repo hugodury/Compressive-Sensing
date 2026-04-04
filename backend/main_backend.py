@@ -9,7 +9,7 @@ from typing import Any
 
 from backend.Tratement_Image import patch
 from backend.utils.Metrics import compute_all_metrics
-
+from backend.Tratement_Image import apply_bilateral_filter
 
 def main_backend(params: dict[str, Any]) -> dict[str, Any]:
     patch_params = params.get("patch_params") or {}
@@ -91,6 +91,7 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
         t1 = time.perf_counter()
 
         reconstructed = out["image_reconstruite"]
+        #reconstructed = apply_bilateral_filter(reconstructed_brut, d=5, sigma_color=50.0, sigma_space=50.0)
         images_by_method[nom] = reconstructed
 
         # On ne dispose pas encore d'un alpha "global" exposé par patch(),

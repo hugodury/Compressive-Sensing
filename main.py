@@ -8,7 +8,7 @@ import math
 from typing import Any
 
 from backend.main_backend import main_backend
-
+from backend.utils.save import save_results
 
 def setupParam(
     image_path: str,
@@ -88,17 +88,38 @@ def main(
 
 
 if __name__ == "__main__":
-    resultats = main(
-        image_path="lena.jpg",
-        block_size=8,
-        ratio=0.25,
-        methodes=["omp", "cosamp"],
-        dictionary_type="dct",
-        measurement_mode="gaussian",
-        output_path="Data/Result",
-        method_params={
-            "omp": {"max_iter": 50, "epsilon": 1e-6},
-            "cosamp": {"max_iter": 30, "epsilon": 1e-6, "s": 8},
-        },
-    )
-    print(resultats["metrics"])
+    IMAGE_TEST = "lena.jpg"
+    METHODES_A_TESTER = ["mp", "omp", "stomp", "cosamp"]
+    DOSSIER_SORTIE = "Data/Result"
+    
+    print(f"--- DÉMARRAGE DU TEST SUR {IMAGE_TEST} ---")
+    
+    try:
+        # 1. On lance le calcul
+        resultats = main(
+            image_path=IMAGE_TEST,
+            block_size=8,
+            ratio=0.25,
+            methodes=METHODES_A_TESTER,
+            dictionary_type="dct",
+            measurement_mode="gaussian",
+            output_path=DOSSIER_SORTIE,
+            method_params={
+                "mp": {"max_iter": 50, "epsilon": 1e-6},
+                "omp": {"max_iter": 50, "epsilon": 1e-6},
+                "stomp": {"max_iter": 50, "epsilon": 1e-6, "t": 2.5},
+                "cosamp": {"max_iter": 30, "epsilon": 1e-6, "s": 6}
+            },
+            seed=42
+        )
+        
+        # 2. On affiche les résultats dans la console
+        print("\n✅ Métriques :\n")
+        for methode, metrics in resultats["metrics"].items():
+            print(f"🔹 {methode.upper()} : PSNR = {metrics['psnr']:.2f} dB | Temps = {metrics['execution_time']:.2f} s")
+            
+        # 3. Appel de ta nouvelle fonction de sauvegarde
+        save_results(resultats, DOSSIER_SORTIE)
+            
+    except Exception as e:
+        print(f"\nUne erreur s'est produite : {e}")
