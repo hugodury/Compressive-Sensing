@@ -30,7 +30,7 @@ def _psnr_stop(
     alpha: np.ndarray,
     psnr_target_db: float | None,
 ) -> bool:
-    """True si le PSNR dépasse le seuil (arrêt anticipé)."""
+    """Arrêt si le patch reconstruit atteint au moins psnr_target_db (expérimental)."""
     if reference_for_psnr is None or D_recon is None or psnr_target_db is None:
         return False
     x_hat = D_recon @ alpha
@@ -221,7 +221,10 @@ def cosamp(
     psnr_target_db: float | None = None,
     **kwargs: object,
 ) -> np.ndarray:
-    """CoSaMP."""
+    """
+    CoSaMP : besoin d’un entier s (support final). Arrêt classique : ||r|| < epsilon ou max_iter.
+    Si reference_for_psnr est fourni avec D_recon et psnr_target_db, arrêt dès PSNR atteint.
+    """
     _ = kwargs
     D = np.asarray(D, dtype=np.float64)
     x = np.asarray(x, dtype=np.float64)

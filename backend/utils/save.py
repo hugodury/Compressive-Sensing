@@ -34,7 +34,13 @@ def save_results(resultats: dict[str, Any], output_path: str) -> None:
 
     # 4. Sauvegarde des métriques dans un fichier CSV
     chemin_csv = os.path.join(dossier_sauvegarde, "metrics.csv")
-    extra_cols = ["pourcentage_mesures", "coherence_mutuelle_cours", "nb_mesures_M", "s_cosamp_utilise"]
+    extra_cols = [
+        "pourcentage_mesures",
+        "coherence_mutuelle_cours",
+        "nb_mesures_M",
+        "s_cosamp_utilise",
+        "cosamp_s_mode",
+    ]
     sample = next(iter(resultats["metrics"].values()), {})
     optionnelles = [c for c in extra_cols if c in sample]
     with open(chemin_csv, mode="w", newline="", encoding="utf-8") as fichier_csv:
@@ -54,5 +60,21 @@ def save_results(resultats: dict[str, Any], output_path: str) -> None:
                 v = metrics.get(c, "")
                 ligne.append(round(v, 6) if isinstance(v, float) else v)
             writer.writerow(ligne)
+
+    emp = resultats.get("empreinte")
+    if isinstance(emp, dict) and emp.get("message"):
+        chemin_emp = os.path.join(dossier_sauvegarde, "empreinte_estimation.txt")
+        with open(chemin_emp, mode="w", encoding="utf-8") as f:
+            f.write(str(emp.get("message", "")).strip() + "\n")
+            for k in (
+                "duree_wall_s",
+                "duree_cpu_process_s",
+                "energie_estimee_wh",
+                "co2e_g_estime",
+                "hypothese_puissance_w",
+                "hypothese_g_co2_par_kwh",
+            ):
+                if k in emp and emp[k] is not None:
+                    f.write(f"{k}: {emp[k]}\n")
 
     print(f"\nRésultats (Images et CSV) sauvegardés dans :\n -> {dossier_sauvegarde}")

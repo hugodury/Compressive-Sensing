@@ -65,7 +65,10 @@ def estime_ordre_parcimonie_cosamp(
     max_iter_omp: int = 32, epsilon: float = 1e-3,
     max_echantillons: int = 64, seed: int | None = None
 ) -> int:
-    """Propose un ordre s pour CoSaMP à partir d’un codage OMP sur les patchs."""
+    """
+    Idée TD : coder quelques patchs avec OMP dans D, regarder combien de coeffs restent « gros »,
+    prendre la médiane (bornée par K) comme s pour CoSaMP.
+    """
     from backend.utils.Methode import omp
 
     N, L = matrice_patchs.shape

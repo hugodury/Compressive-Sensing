@@ -1,11 +1,24 @@
 """
-Point d'entrée du projet.
+Point d’entrée : main() lance une reco, run_pipeline() enchaîne reco / sauvegarde / CSV §6 / graphe.
 """
 
 from __future__ import annotations
 
+import argparse
+import copy
 import math
+import resource
+import sys
+import time
+from collections.abc import Sequence
 from typing import Any
+
+from backend.utils.empreinte import (
+    afficher_si_demande,
+    estimation_dict,
+    estimer_empreinte,
+    cpu_process_delta_depuis,
+)
 
 from backend.main_backend import main_backend
 from backend.utils.save import save_results
@@ -25,6 +38,10 @@ def setupParam(
     method_params: dict[str, dict[str, Any]] | None = None,
     patch_params: dict[str, Any] | None = None,
     seed: int | None = None,
+    empreinte_carbone: bool = True,
+    empreinte_afficher_console: bool = True,
+    empreinte_puissance_w: float = 45.0,
+    empreinte_g_co2_par_kwh: float = 85.0,
 ) -> dict[str, Any]:
     if block_size <= 0:
         raise ValueError("block_size doit être > 0.")
@@ -67,6 +84,10 @@ def setupParam(
         "method_params": method_params or {},
         "patch_params": patch_params or {},
         "seed": seed,
+        "empreinte_carbone": empreinte_carbone,
+        "empreinte_afficher_console": empreinte_afficher_console,
+        "empreinte_puissance_w": empreinte_puissance_w,
+        "empreinte_g_co2_par_kwh": empreinte_g_co2_par_kwh,
     }
 
 
@@ -84,6 +105,10 @@ def main(
     method_params: dict[str, dict[str, Any]] | None = None,
     patch_params: dict[str, Any] | None = None,
     seed: int | None = None,
+    empreinte_carbone: bool = True,
+    empreinte_afficher_console: bool = True,
+    empreinte_puissance_w: float = 45.0,
+    empreinte_g_co2_par_kwh: float = 85.0,
 ) -> dict[str, Any]:
     params = setupParam(
         image_path=image_path,
@@ -99,43 +124,185 @@ def main(
         method_params=method_params,
         patch_params=patch_params,
         seed=seed,
+        empreinte_carbone=empreinte_carbone,
+        empreinte_afficher_console=empreinte_afficher_console,
+        empreinte_puissance_w=empreinte_puissance_w,
+        empreinte_g_co2_par_kwh=empreinte_g_co2_par_kwh,
     )
     return main_backend(params)
 
 
-if __name__ == "__main__":
-    IMAGE_TEST = "lena.jpg"
-    METHODES_A_TESTER = ["mp", "omp", "stomp", "cosamp"]
-    DOSSIER_SORTIE = "Data/Result"
-    
-    print(f"--- DÉMARRAGE DU TEST SUR {IMAGE_TEST} ---")
-    
+def run_pipeline(
+    params: dict[str, Any],
+    *,
+    etapes: Sequence[str] | str = ("reconstruct",),
+    sweep_ratios: Sequence[float] | None = None,
+    tableaux_avec_erreurs: bool = True,
+    tableaux_max_iter: int = 64,
+) -> dict[str, Any]:
+    """
+    Enchaîne des étapes sans IHM : reconstruct → save_results → CSV section 6 → courbe PSNR.
+
+    etapes : tuple ou chaîne "reconstruct,save,tableaux_s6,sweep_graph".
+    sweep_ratios : pourcentages ou fractions comme ailleurs (ex. 15, 25 ou 0.25, 0.5).
+    """
+    if isinstance(etapes, str):
+        etapes_list = [e.strip() for e in etapes.split(",") if e.strip()]
+    else:
+        etapes_list = [str(e).strip() for e in etapes]
+    etapes_set = frozenset(etapes_list)
+    sortie: dict[str, Any] = {}
+    out_path = str(params.get("output_path") or "Data/Result")
+
+    t_pipe = time.perf_counter()
+    ru_pipe = None
     try:
-        # 1. On lance le calcul
-        resultats = main(
-            image_path=IMAGE_TEST,
-            block_size=8,
-            ratio=0.25,
-            methodes=METHODES_A_TESTER,
-            dictionary_type="dct",
-            measurement_mode="gaussian",
-            output_path=DOSSIER_SORTIE,
-            method_params={
-                "mp": {"max_iter": 50, "epsilon": 1e-6},
-                "omp": {"max_iter": 50, "epsilon": 1e-6},
-                "stomp": {"max_iter": 50, "epsilon": 1e-6, "t": 2.5},
-                "cosamp": {"max_iter": 30, "epsilon": 1e-6, "s": 6}
-            },
-            seed=42
+        ru_pipe = resource.getrusage(resource.RUSAGE_SELF)
+    except (OSError, AttributeError):
+        pass
+
+    if "reconstruct" in etapes_set:
+        p_run = copy.deepcopy(params)
+        p_run["empreinte_afficher_console"] = False
+        sortie["reconstruction"] = main_backend(p_run)
+
+    if "save" in etapes_set:
+        if "reconstruction" not in sortie:
+            raise ValueError("Étape save sans reconstruct : lance d’abord reconstruct.")
+        save_results(sortie["reconstruction"], out_path)
+
+    if "tableaux_s6" in etapes_set:
+        from backend.utils.Dictionnaire import build_dct_dictionary
+        from backend.utils.projet_tableaux import exporter_tableaux_section6
+
+        B = int(params["B"])
+        N = B * B
+        na = params.get("n_atoms")
+        K = min(int(na) if na is not None else N, N)
+        D_tab = build_dct_dictionary(N)[:, :K]
+        sd = params.get("seed")
+        seed_i = int(sd) if sd is not None else 0
+        dossier = exporter_tableaux_section6(
+            D_tab,
+            N,
+            output_dir=out_path,
+            seed=seed_i,
+            avec_erreurs_relatives=tableaux_avec_erreurs,
+            max_iter=tableaux_max_iter,
         )
-        
-        # 2. On affiche les résultats dans la console
-        print("\n✅ Métriques :\n")
-        for methode, metrics in resultats["metrics"].items():
-            print(f"🔹 {methode.upper()} : PSNR = {metrics['psnr']:.2f} dB | Temps = {metrics['execution_time']:.2f} s")
-            
-        # 3. Appel de ta nouvelle fonction de sauvegarde
-        save_results(resultats, DOSSIER_SORTIE)
-            
+        sortie["dossier_tableaux_section6"] = dossier
+
+    if "sweep_graph" in etapes_set:
+        if not sweep_ratios:
+            raise ValueError("sweep_graph : fournir sweep_ratios=[...] (ex. [15, 25, 50]).")
+        from backend.utils.graphiques_projet import exporter_sweep_graphique
+
+        sortie["sweep_graphique"] = exporter_sweep_graphique(
+            params, list(sweep_ratios), output_path=out_path
+        )
+
+    if params.get("empreinte_carbone", True):
+        wall = time.perf_counter() - t_pipe
+        cpu = cpu_process_delta_depuis(ru_pipe)
+        est = estimer_empreinte(
+            wall,
+            puissance_w=float(params.get("empreinte_puissance_w", 45.0)),
+            intensite_g_co2_par_kwh=float(params.get("empreinte_g_co2_par_kwh", 85.0)),
+            duree_cpu_process_s=cpu,
+            contexte="run_pipeline (session)",
+        )
+        sortie["empreinte_session"] = estimation_dict(est)
+        afficher_si_demande(
+            est,
+            actif=bool(params.get("empreinte_afficher_console", True)),
+        )
+
+    return sortie
+
+
+def _parse_sweep_ratios(s: str) -> list[float]:
+    out: list[float] = []
+    for part in s.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        out.append(float(part))
+    return out
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Reconstruction BCS — une reco ou un enchaînement d’étapes.",
+    )
+    parser.add_argument("-i", "--image", default="lena.jpg", help="Chemin image niveaux de gris")
+    parser.add_argument(
+        "--etapes",
+        default="reconstruct,save",
+        help="reconstruct, save, tableaux_s6, sweep_graph (virgules)",
+    )
+    parser.add_argument("--sweep-ratios", default="15,25,50", help="Pour sweep_graph uniquement")
+    parser.add_argument("--no-tableaux-erreurs", action="store_true", help="CSV §6 sans erreurs relatives (plus rapide)")
+    parser.add_argument("--max-patches", type=int, default=None, help="Limite de patchs (tests rapides)")
+    args, _unknown = parser.parse_known_args()
+
+    IMAGE_TEST = args.image
+    DOSSIER_SORTIE = "Data/Result"
+    METHODES_A_TESTER = ["mp", "omp", "stomp", "cosamp"]
+
+    patch_extra: dict[str, Any] = {}
+    if args.max_patches is not None:
+        patch_extra["max_patches"] = args.max_patches
+
+    params = setupParam(
+        image_path=IMAGE_TEST,
+        block_size=8,
+        ratio=0.25,
+        methodes=METHODES_A_TESTER,
+        dictionary_type="dct",
+        measurement_mode="gaussian",
+        output_path=DOSSIER_SORTIE,
+        method_params={
+            "mp": {"max_iter": 50, "epsilon": 1e-6},
+            "omp": {"max_iter": 50, "epsilon": 1e-6},
+            "stomp": {"max_iter": 50, "epsilon": 1e-6, "t": 2.5},
+            "cosamp": {"max_iter": 30, "epsilon": 1e-6, "s": 6},
+        },
+        patch_params=patch_extra or {},
+        seed=42,
+    )
+
+    try:
+        etapes_tokens = [x.strip() for x in args.etapes.split(",") if x.strip()]
+        ratios = _parse_sweep_ratios(args.sweep_ratios)
+        tout = run_pipeline(
+            params,
+            etapes=args.etapes,
+            sweep_ratios=ratios if "sweep_graph" in etapes_tokens else None,
+            tableaux_avec_erreurs=not args.no_tableaux_erreurs,
+        )
+        if "reconstruction" in tout:
+            r = tout["reconstruction"]
+            print(f"--- OK : {IMAGE_TEST} ---")
+            for methode, metrics in r["metrics"].items():
+                tps = metrics.get("execution_time", 0.0)
+                ps = metrics.get("psnr", 0.0)
+                mse = metrics.get("mse", 0.0)
+                rel = metrics.get("relative_error", 0.0)
+                ps_str = f"{ps:.2f}" if math.isfinite(float(ps)) else "inf"
+                ligne = (
+                    f"{methode.upper()}  PSNR={ps_str} dB  MSE={float(mse):.6g}  "
+                    f"err_rel={float(rel):.4f}  temps={tps:.2f}s"
+                )
+                if metrics.get("cosamp_s_mode"):
+                    ligne += f"  CoSaMP s={metrics.get('s_cosamp_utilise')} ({metrics['cosamp_s_mode']})"
+                print(ligne)
+        if "dossier_tableaux_section6" in tout:
+            print("Tableaux §6 ->", tout["dossier_tableaux_section6"])
+        if "sweep_graphique" in tout:
+            print("Courbe PSNR ->", tout["sweep_graphique"].get("graphique_psnr_png"))
+    except FileNotFoundError as e:
+        print("Image introuvable :", e, file=sys.stderr)
+        sys.exit(1)
     except Exception as e:
-        print(f"\nUne erreur s'est produite : {e}")
+        print("Erreur :", e, file=sys.stderr)
+        sys.exit(1)

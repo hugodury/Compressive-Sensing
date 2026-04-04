@@ -44,6 +44,7 @@ def sweep_ratios_psnr(
         else:
             p["M"] = max(1, int(np.ceil((r / 100.0) * n)))
 
+        p["empreinte_afficher_console"] = False
         out = main_backend(p)
         for m in methodes:
             met = out["metrics"][m]

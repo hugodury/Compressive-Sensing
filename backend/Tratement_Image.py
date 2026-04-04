@@ -1,8 +1,8 @@
 """
-Traitement des images.
+Découpage d’image en patchs et reconstruction BCS (mesures simulées + solveur par patch).
 
-Pour l’instant, on s’occupe du découpage d’une image en blocs carrés,
-puis on met chaque bloc sous forme de vecteur (une colonne de matrice).
+Le découpage est sans recouvrement ; la reco attend ratio/M/Phi et utilise le dictionnaire
+demandé (DCT, mixte, K-SVD…). CoSaMP : voir les champs cosamp_s / cosamp_s_mode en sortie.
 """
 
 from __future__ import annotations
@@ -325,14 +325,20 @@ def patch(
     A = Phi @ D  # (M, K)
     _, K = A.shape
 
-    # Préparation du recollage
+    # Recollage : une case = un patch reconstruit (les autres restent à 0 si max_patches limite le nombre).
     X_rec = np.zeros((n1, n2), dtype=np.float64)
     NB_used = NB if max_patches is None else min(NB, int(max_patches))
 
-    # CoSaMP : s = ordre de parcimonie supposé. Si s_cosamp_auto, on le déduit comme au TD
-    # K-SVD (OMP sur quelques patchs complets, médiane des |support|).
+    meth = method.lower().strip()
+
+    # CoSaMP a besoin d’un entier s (taille du support après rejet). Deux modes :
+    # — tu fixes s_cosamp (ou method_params["cosamp"]["s"] via main) ;
+    # — ou s_cosamp_auto=True : on lance OMP sur des patchs d’entraînement et on prend la médiane
+    #   des nombres de coefficients actifs (même idée que dans le TD après K-SVD).
     s_eff_cosamp = int(s_cosamp)
-    if method.lower().strip() == "cosamp" and s_cosamp_auto:
+    cosamp_s_estime = False
+    if meth == "cosamp" and s_cosamp_auto:
+        cosamp_s_estime = True
         s_eff_cosamp = estime_ordre_parcimonie_cosamp(
             matrice_pour_dictionnaire,
             D,
@@ -342,8 +348,7 @@ def patch(
             seed=seed,
         )
 
-    # Choix de la méthode (parcimonieux + convexes du cours)
-    method_norm = method.lower().strip()
+    method_norm = meth
     if method_norm == "mp":
         solver = mp
     elif method_norm == "omp":
@@ -367,6 +372,8 @@ def patch(
 
     for idx in range(NB_used):
         yj = y[:, idx]
+        # psnr_stop : à chaque itération du solveur, si le patch reconstruit dépasse psnr_target_db, on arrête.
+        # Utile surtout en expérimentation (il faut le patch vrai, donc cas « simulation » où on connaît x).
         x_ref = matrice_patchs[:, idx] if psnr_stop else None
         extra_psnr: dict = {}
         if psnr_stop and x_ref is not None:
@@ -430,7 +437,12 @@ def patch(
     if ksvd_meta is not None:
         out["ksvd_meta"] = ksvd_meta
     if ratio is not None or M is not None or Phi is not None:
-        out["s_cosamp_utilise"] = int(s_eff_cosamp) if method.lower().strip() == "cosamp" else None
+        if meth == "cosamp":
+            out["s_cosamp_utilise"] = int(s_eff_cosamp)
+            out["cosamp_s"] = int(s_eff_cosamp)
+            out["cosamp_s_mode"] = "estime_omp" if cosamp_s_estime else "fixe"
+        else:
+            out["s_cosamp_utilise"] = None
     return out if as_dict else out["image_reconstruite"]
 
 def apply_bilateral_filter(reconstructed_image: np.ndarray, d: int = 5, sigma_color: float = 75.0, sigma_space: float = 75.0) -> np.ndarray:

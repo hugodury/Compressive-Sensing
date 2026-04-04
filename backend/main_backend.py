@@ -1,17 +1,27 @@
 """
-Point d'entrée du backend.
+Enchaîne les appels à patch() pour chaque méthode demandée, puis calcule PSNR/MSE/temps.
+
+Les réglages passent par params (setupParam) : patch_params pour Φ, max_patches, s_cosamp_auto,
+psnr_stop, etc. ; method_params pour max_iter, epsilon, s (CoSaMP), t (StOMP).
 """
 
 from __future__ import annotations
 
+import resource
 import time
 from typing import Any
 
 from backend.Tratement_Image import patch
 from backend.utils.Metrics import compute_all_metrics
-from backend.Tratement_Image import apply_bilateral_filter
+from backend.utils.empreinte import fusionner_empreinte_dans_resultat
 
 def main_backend(params: dict[str, Any]) -> dict[str, Any]:
+    t_wall_debut = time.perf_counter()
+    rusage_debut = None
+    try:
+        rusage_debut = resource.getrusage(resource.RUSAGE_SELF)
+    except (OSError, AttributeError):
+        pass
     patch_params = params.get("patch_params") or {}
     patch_B = patch_params.get("B", params["B"])
     patch_nrows = patch_params.get("nrows")
@@ -110,9 +120,11 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
             metrics["nb_mesures_M"] = out["nb_mesures_M"]
         if out.get("s_cosamp_utilise") is not None:
             metrics["s_cosamp_utilise"] = out["s_cosamp_utilise"]
+        if out.get("cosamp_s_mode") is not None:
+            metrics["cosamp_s_mode"] = out["cosamp_s_mode"]
         metrics_by_method[nom] = metrics
 
-    return {
+    resultat: dict[str, Any] = {
         "params": params,
         "patch": base,
         "original": image_originale,
@@ -120,3 +132,11 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
         "metrics": metrics_by_method,
         "n_patches": int(original.shape[1]),
     }
+    fusionner_empreinte_dans_resultat(
+        resultat,
+        params,
+        t_wall_debut=t_wall_debut,
+        rusage_debut=rusage_debut,
+        contexte="main_backend",
+    )
+    return resultat

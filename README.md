@@ -9,19 +9,56 @@ Depuis la racine du projet :
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install numpy pillow scipy
+pip install -r requirements.txt
 ```
 
-`scipy` sert surtout pour BP/LP. Pour tracer des courbes PSNR en fonction du ratio, ajoute `matplotlib` si besoin.
+(`matplotlib` pour les graphes ; le reste pour numpy / scipy / BP-LP.)
 
 Toutes les commandes ci-dessous supposent que tu es **à la racine du repo** (sinon `import backend` ne marchera pas).
 
 ## Lancer une reco
 
-Le script par défaut attend une image `lena.jpg` à la racine (à toi de la mettre ou de changer le chemin dans `main.py`).
+Image par défaut : `lena.jpg` à la racine. Enchaînement d’étapes (reco + sauvegarde + CSV section 6 + courbe PSNR) :
 
 ```bash
-python3 main.py
+python3 main.py -h
+python3 main.py -i lena.jpg --etapes reconstruct,save
+python3 main.py --etapes reconstruct,tableaux_s6 --no-tableaux-erreurs
+python3 main.py --etapes reconstruct,sweep_graph --sweep-ratios 15,30,50
+```
+
+En Python : `from main import run_pipeline, setupParam` puis `run_pipeline(params, etapes=("reconstruct", "save", "tableaux_s6"))`.
+
+## Critère d’arrêt PSNR (optionnel)
+
+En pratique on arrête sur `max_iter` ou `epsilon` (norme du résiduel). Tu peux ajouter un arrêt dès que le **patch reconstruit** atteint un PSNR cible (utile en simulation où le vrai patch est connu) :
+
+```python
+patch_params={
+    "psnr_stop": True,
+    "psnr_target_db": 40.0,
+}
+```
+
+Ça s’applique aux solveurs itératifs qui propagent `reference_for_psnr` (MP, OMP, StOMP, CoSaMP, IRLS, LASSO — pas BP/LP en une passe).
+
+## CoSaMP et le `s`
+
+- **Fixe** : `method_params["cosamp"]["s"]` (ou `s_cosamp` dans `patch`).
+- **Estimé** : `patch_params["s_cosamp_auto"] = True` (médiane des supports OMP sur les patchs d’entraînement ; même `D` que pour la reco).
+
+Les métriques incluent `s_cosamp_utilise` et `cosamp_s_mode` (`fixe` ou `estime_omp`).
+
+## Empreinte carbone (indicatif)
+
+À chaque exécution, le backend peut estimer un ordre de grandeur d’émissions CO₂eq à partir du temps d’exécution et d’hypothèses (puissance PC, intensité du mix électrique). Le message part sur **stderr** ; une ligne est aussi sauvegardée dans `empreinte_estimation.txt` avec les images. Détails, limites et pistes pour réduire l’usage CPU : voir **`EMPREINTE.md`**.
+
+Dans `setupParam` / `params` : `empreinte_carbone` (désactiver le calcul), `empreinte_afficher_console`, `empreinte_puissance_w`, `empreinte_g_co2_par_kwh`. Avec `run_pipeline`, la synthèse session est dans la clé `empreinte_session` ; l’affichage par étape `main_backend` est coupé pour éviter le double compte sur la console.
+
+## Tests
+
+```bash
+python3 -m unittest tests.test_smoke -v
 ```
 
 Sinon, depuis Python :
