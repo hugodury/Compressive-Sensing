@@ -36,3 +36,10 @@ Pour calculer sans afficher sur la console : `empreinte_afficher_console=False`.
 - **Étapes optionnelles** : tableaux §6 avec `--no-tableaux-erreurs` ou moins d’itérations réduit le temps CPU.
 
 Pour un rapport sérieux, croiser cette estimation avec des outils type **CodeCarbon** / mesure réelle sur ta machine si besoin.
+
+## Rapport avec la « réalité » énergétique
+
+- Le modèle utilise le **temps mur** (horloge) × une **puissance moyenne supposée** : ce n’est **pas** la puissance instantanée mesurée sur la prise ou par le CPU (TDP, capteurs RAPL, etc.).
+- Si le processeur est en partie au repos pendant l’exécution, l’estimation peut **surestimer** l’énergie réelle ; si d’autres processus chargent la machine en parallèle, elle peut **sous-estimer** la part due au projet.
+- La formule **Wh = P(W) × Δt(h)** puis **g CO₂eq = kWh × intensité (g/kWh)** est cohérente pour un ordre de grandeur **comparatif entre deux runs** sur la même machine avec les mêmes hypothèses P et intensité.
+- Pour une valeur « auditée », il faudrait un wattmètre, des données grid-specific temps réel, ou un outil de mesure logicielle calibré.

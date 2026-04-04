@@ -55,13 +55,9 @@ Les métriques incluent `s_cosamp_utilise` et `cosamp_s_mode` (`fixe` ou `estime
 
 Dans `setupParam` / `params` : `empreinte_carbone` (désactiver le calcul), `empreinte_afficher_console`, `empreinte_puissance_w`, `empreinte_g_co2_par_kwh`. Avec `run_pipeline`, la synthèse session est dans la clé `empreinte_session` ; l’affichage par étape `main_backend` est coupé pour éviter le double compte sur la console.
 
-## Tests
+## Essai rapide (sans suite unittest)
 
-```bash
-python3 -m unittest tests.test_smoke -v
-```
-
-Sinon, depuis Python :
+Depuis Python :
 
 ```python
 from main import main

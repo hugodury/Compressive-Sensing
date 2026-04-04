@@ -1,6 +1,10 @@
-Lancer l'interface :
+Lancer l'interface **depuis un terminal**, à la racine du dépôt :
 
-python frontend/app.py
+```bash
+python3 frontend/app.py
+```
+
+Si la fenêtre se ferme tout de suite, relance depuis le terminal (pas un double-clic sans console) : tu verras l’erreur, ou une boîte de dialogue « erreur au démarrage » / « erreur (interface) ». Un fichier de log peut aussi apparaître via `logging` sur stderr.
 
 Cette interface couvre :
 - reconstruction BCS

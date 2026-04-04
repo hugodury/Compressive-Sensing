@@ -6,7 +6,7 @@ from tkinter import ttk
 
 class BasePage(ttk.Frame):
     def __init__(self, parent: tk.Misc, app) -> None:
-        super().__init__(parent, style="Panel.TFrame", padding=16)
+        super().__init__(parent, style="Panel.TFrame", padding=(18, 16))
         self.app = app
         self.state = app.state
 

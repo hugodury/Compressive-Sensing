@@ -142,11 +142,12 @@ def visualize_patches(
     B_eff = n1 // nr
 
     X_work = X[:n1, :n2]
+    stem = Path(image_path).stem or "image"
 
     # 2) Image avec grille des patchs
     # Fond blanc + espaces entre les blocs
     grid_rgb = _render_patches_separes(X_work, B=B_eff, nr=nr, nc=nc, gap=gap)
-    grid_path = os.path.join(out_dir, f"lena_grid_B{B_eff}_gap{gap}.png")
+    grid_path = os.path.join(out_dir, f"{stem}_grid_B{B_eff}_gap{gap}.png")
     Image.fromarray(grid_rgb).save(grid_path)
 
     # 3) Recompositions patch par patch (on garde seulement les premières étapes)
@@ -170,14 +171,14 @@ def visualize_patches(
                     nc=nc,
                     gap=gap,
                 )
-                step_path = os.path.join(out_dir, f"lena_step_{idx_patch:05d}_B{B_eff}.png")
+                step_path = os.path.join(out_dir, f"{stem}_step_{idx_patch:05d}_B{B_eff}.png")
                 Image.fromarray(rgb_step).save(step_path)
                 saved += 1
 
             idx_patch += 1
 
     # 4) Image finale recomposée (sur la zone recadrée)
-    final_path = os.path.join(out_dir, f"lena_recompose_B{B_eff}.png")
+    final_path = os.path.join(out_dir, f"{stem}_recompose_B{B_eff}.png")
     _save_grayscale(final_path, current)
 
 

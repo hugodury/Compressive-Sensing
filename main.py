@@ -132,6 +132,80 @@ def main(
     return main_backend(params)
 
 
+ALL_BACKEND_METHODS: tuple[str, ...] = ("mp", "omp", "stomp", "cosamp", "irls", "bp", "lp", "lasso")
+
+
+def run_coarse_best_search(
+    base_params: dict[str, Any],
+    *,
+    ratios: Sequence[float] | None = None,
+    measurement_modes: Sequence[str] | None = None,
+    max_patches_cap: int = 72,
+) -> dict[str, Any]:
+    """
+    Explore plusieurs couples (ratio de mesures, Φ) avec toutes les méthodes, en limitant le nombre de patchs
+    pour garder un temps raisonnable. Retourne la meilleure combinaison au sens du PSNR (sur les patchs traités).
+
+    Exige un découpage classique par B (pas de grille nrows×ncols dans ``patch_params``).
+    """
+    if ratios is None:
+        ratios = (20.0, 35.0, 50.0)
+    if measurement_modes is None:
+        measurement_modes = ("phi1", "phi2", "phi3", "phi4")
+
+    pp_base = copy.deepcopy(base_params.get("patch_params") or {})
+    if pp_base.get("nrows") is not None or pp_base.get("ncols") is not None:
+        raise ValueError("Balayage automatique : désactivez la grille nrows×ncols et utilisez la taille de bloc B.")
+
+    trials: list[dict[str, Any]] = []
+    best_psnr = float("-inf")
+    best: dict[str, Any] | None = None
+
+    for phi in measurement_modes:
+        for ratio in ratios:
+            p = setupParam(
+                image_path=str(base_params["image_path"]),
+                block_size=int(base_params["B"]),
+                ratio=float(ratio),
+                methodes=list(ALL_BACKEND_METHODS),
+                dictionary_type=str(base_params["dictionary_type"]),
+                measurement_mode=str(phi),
+                output_path=str(base_params.get("output_path") or "Data/Result"),
+                n_atoms=base_params.get("n_atoms"),
+                n_iter_ksvd=int(base_params.get("n_iter_ksvd", 0) or 0),
+                dictionary_train_image_path=base_params.get("dictionary_train_image_path"),
+                method_params=copy.deepcopy(base_params.get("method_params") or {}),
+                patch_params={},
+                seed=base_params.get("seed"),
+                empreinte_carbone=False,
+                empreinte_afficher_console=False,
+                empreinte_puissance_w=float(base_params.get("empreinte_puissance_w", 45.0)),
+                empreinte_g_co2_par_kwh=float(base_params.get("empreinte_g_co2_par_kwh", 85.0)),
+            )
+            pp = copy.deepcopy(pp_base)
+            pp["max_patches"] = int(max_patches_cap)
+            pp["mode_phi"] = phi
+            pp.pop("M", None)
+            p["patch_params"] = pp
+
+            out = main_backend(p)
+            for meth, met in out.get("metrics", {}).items():
+                ps = float(met.get("psnr", float("-inf")))
+                row = {
+                    "measurement_mode": phi,
+                    "ratio": float(ratio),
+                    "method": meth,
+                    "psnr": ps,
+                    "mse": float(met.get("mse", 0.0)),
+                }
+                trials.append(row)
+                if ps > best_psnr:
+                    best_psnr = ps
+                    best = row.copy()
+
+    return {"best": best, "trials": trials, "nb_evaluations": len(trials)}
+
+
 def run_pipeline(
     params: dict[str, Any],
     *,

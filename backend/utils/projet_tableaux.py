@@ -234,12 +234,12 @@ def exporter_tableaux_section6(
     max_iter: int = 80,
 ) -> str:
     """
-    Crée un dossier horodaté (jj.mm.hh.mm) sous ``output_dir`` avec :
+    Crée un dossier horodaté (jj.mm.hh.mm) sous ``output_dir`` avec un sous-dossier ``Graph`` contenant :
     - ``M_pour_P.csv`` : P → M
-    - ``coherence_mutuelle.csv`` : tableau section 6
+    - ``coherence_mutuelle.csv``
     - ``erreurs_relatives_vecteur*.csv`` si demandé
 
-    Retourne le chemin du dossier créé.
+    Retourne le chemin du dossier ``Graph`` (là où sont les CSV).
     """
     horodatage = time.strftime("%d.%m.%H.%M")
     dossier = os.path.join(output_dir, horodatage, "Graph")
@@ -262,9 +262,9 @@ def exporter_tableaux_section6(
         )
         _ecrire_csv_erreurs(os.path.join(dossier, "erreurs_relatives"), err)
 
-    parent = os.path.dirname(dossier)
-    print(f"Tableaux section 6 exportés dans :\n -> {parent}")
-    return parent
+    print(f"Tableaux exportés dans :\n -> {dossier}")
+    # Dossier contenant directement les CSV (sous-dossier « Graph » horodaté).
+    return dossier
 
 
 if __name__ == "__main__":
