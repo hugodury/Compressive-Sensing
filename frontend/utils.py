@@ -590,3 +590,154 @@ def build_section6_mp_coherence_figure(
 
     fig.subplots_adjust(top=0.91, bottom=0.08, left=0.11, right=0.97, hspace=0.35)
     return fig
+
+
+def build_sparsity_figure(alphas_by_method: dict[str, Any], *, eps: float = 1e-8) -> Figure:
+    """
+    Bar chart du nombre moyen de coefficients non nuls (‖α‖₀ approché)
+    par méthode, moyenné sur tous les patchs reconstruits.
+
+    alphas_by_method : {methode: np.ndarray de forme (K, NB_used)}
+    """
+    import numpy as np
+
+    methods = list(alphas_by_method.keys())
+    nnz_means = []
+    nnz_stds = []
+    for m in methods:
+        A = np.asarray(alphas_by_method[m])  # (K, NB)
+        nnz_per_patch = np.sum(np.abs(A) > eps, axis=0).astype(float)  # (NB,)
+        nnz_means.append(float(np.mean(nnz_per_patch)))
+        nnz_stds.append(float(np.std(nnz_per_patch)))
+
+    fig = Figure(figsize=(max(5, len(methods) * 1.2), 4), dpi=110)
+    fig.patch.set_facecolor("#f7f8fb")
+    ax = fig.add_subplot(111)
+    ax.set_facecolor("#ffffff")
+
+    colors = ["#1e5a8e", "#2e86c1", "#117a65", "#b7950b", "#884ea0", "#cb4335", "#1a5276", "#117864"]
+    x = range(len(methods))
+    bars = ax.bar(
+        x,
+        nnz_means,
+        yerr=nnz_stds,
+        capsize=4,
+        color=[colors[i % len(colors)] for i in x],
+        edgecolor="#334155",
+        linewidth=0.8,
+        error_kw={"elinewidth": 1.2, "ecolor": "#64748b"},
+    )
+
+    # Valeur au-dessus de chaque barre
+    for bar, mean, std in zip(bars, nnz_means, nnz_stds):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + std + 0.3,
+            f"{mean:.1f}",
+            ha="center", va="bottom",
+            fontsize=9, fontweight="bold", color="#1a2332",
+        )
+
+    ax.set_xticks(list(x))
+    ax.set_xticklabels([m.upper() for m in methods], fontsize=10)
+    ax.set_ylabel("Nombre moyen de coefficients non nuls (‖α‖₀)", fontsize=9, color="#475569")
+    ax.set_title("Parcimonie par méthode — coefficients non nuls moyens sur tous les patchs", fontsize=10, fontweight="bold", color="#334155")
+    ax.yaxis.grid(True, alpha=0.4, linestyle="--")
+    ax.set_axisbelow(True)
+    for spine in ("top", "right"):
+        ax.spines[spine].set_visible(False)
+
+    fig.tight_layout()
+    return fig
+
+
+def build_dico_comparison_table(
+    result_a: dict[str, Any],
+    result_b: dict[str, Any],
+    *,
+    eps: float = 1e-8,
+) -> tuple[list[str], list[list[str]]]:
+    """
+    Construit les données du tableau de comparaison entre deux reconstructions.
+    Retourne (colonnes, lignes) sous forme de listes de chaînes.
+    Chaque ligne : [Méthode, PSNR_A, PSNR_B, ΔPSNR, MSE_A, MSE_B, ErrRel_A, ErrRel_B, Temps_A, Temps_B, Parcimonie_A, Parcimonie_B]
+    """
+    import numpy as np
+
+    def _label(res: dict) -> str:
+        p = res.get("params", {})
+        dt = str(p.get("dictionary_type", "?")).upper()
+        phi = str(p.get("measurement_mode", "?"))
+        ratio = p.get("ratio", "?")
+        ratio_str = f"{int(float(ratio)*100) if float(ratio) <= 1 else int(float(ratio))}%"
+        return f"{dt} · {phi} · {ratio_str}"
+
+    label_a = _label(result_a)
+    label_b = _label(result_b)
+
+    metrics_a = result_a.get("metrics", {})
+    metrics_b = result_b.get("metrics", {})
+    alphas_a = result_a.get("alphas_by_method", {})
+    alphas_b = result_b.get("alphas_by_method", {})
+
+    # Union des méthodes présentes dans les deux résultats
+    methods = list(dict.fromkeys(list(metrics_a.keys()) + list(metrics_b.keys())))
+
+    def _nnz(alphas: dict, meth: str) -> str:
+        if meth not in alphas:
+            return "—"
+        A = np.asarray(alphas[meth])
+        return f"{float(np.mean(np.sum(np.abs(A) > eps, axis=0))):.1f}"
+
+    def _get(metrics: dict, meth: str, key: str, fmt: str) -> str:
+        if meth not in metrics:
+            return "—"
+        v = metrics[meth].get(key)
+        if v is None:
+            return "—"
+        try:
+            return fmt.format(float(v))
+        except (ValueError, TypeError):
+            return str(v)
+
+    columns = [
+        "Méthode",
+        f"PSNR A\n{label_a}",
+        f"PSNR B\n{label_b}",
+        "ΔPSNR (B−A)",
+        f"MSE A",
+        f"MSE B",
+        f"Err.rel A",
+        f"Err.rel B",
+        f"Temps A (s)",
+        f"Temps B (s)",
+        f"‖α‖₀ moy A",
+        f"‖α‖₀ moy B",
+    ]
+
+    rows = []
+    for m in methods:
+        psnr_a_str = _get(metrics_a, m, "psnr", "{:.2f}")
+        psnr_b_str = _get(metrics_b, m, "psnr", "{:.2f}")
+        try:
+            delta = float(metrics_b[m]["psnr"]) - float(metrics_a[m]["psnr"])
+            delta_str = f"{delta:+.2f}"
+        except (KeyError, TypeError, ValueError):
+            delta_str = "—"
+
+        rows.append([
+            m.upper(),
+            psnr_a_str,
+            psnr_b_str,
+            delta_str,
+            _get(metrics_a, m, "mse", "{:.2f}"),
+            _get(metrics_b, m, "mse", "{:.2f}"),
+            _get(metrics_a, m, "relative_error", "{:.4f}"),
+            _get(metrics_b, m, "relative_error", "{:.4f}"),
+            _get(metrics_a, m, "execution_time", "{:.2f}"),
+            _get(metrics_b, m, "execution_time", "{:.2f}"),
+            _nnz(alphas_a, m),
+            _nnz(alphas_b, m),
+        ])
+
+    return columns, rows, label_a, label_b

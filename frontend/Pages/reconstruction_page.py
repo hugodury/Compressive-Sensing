@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +38,12 @@ class ReconstructionPage(BasePage):
         super().__init__(parent, app)
         self.vars: dict[str, tk.Variable] = {}
         self.method_vars: dict[str, tk.BooleanVar] = {}
+        # Attributs UI initialisés ici pour éviter AttributeError
+        # si _set_busy est appelé avant que _build() les crée
+        self._btn_run: ttk.Button | None = None
+        self._btn_coarse_run: ttk.Button | None = None
+        self._progressbar: ttk.Progressbar | None = None
+        self._status_label: ttk.Label | None = None
         self._build()
         self._set_defaults()
 
@@ -401,9 +408,13 @@ class ReconstructionPage(BasePage):
             text="Afficher l’assistant repères",
             command=self._show_assistant_outer,
         )
-        ttk.Button(lf_act, text="Lancer la reconstruction", style="Primary.TButton", command=self.run_reconstruction).pack(
-            fill="x", pady=(0, 8)
-        )
+        self._btn_run = ttk.Button(lf_act, text="Lancer la reconstruction", style="Primary.TButton", command=self.run_reconstruction)
+        self._btn_run.pack(fill="x", pady=(0, 6))
+        self._btn_coarse_run: ttk.Button | None = None
+        self._progressbar = ttk.Progressbar(lf_act, mode="indeterminate", length=200)
+        self._progressbar.pack(fill="x", pady=(0, 2))
+        self._status_label = ttk.Label(lf_act, text="", style="Muted.TLabel", anchor="center")
+        self._status_label.pack(fill="x", pady=(0, 6))
         ttk.Checkbutton(lf_act, text="Sauvegarder PNG + CSV après succès", variable=self.vars["auto_save"]).pack(anchor="w")
         ttk.Button(lf_act, text="Onglet Résultats", command=lambda: self.app.select_tab("Résultats")).pack(fill="x", pady=(10, 0))
 
@@ -431,6 +442,34 @@ class ReconstructionPage(BasePage):
         path = filedialog.askdirectory(title="Choisir un dossier")
         if path:
             self.vars[key].set(path)
+
+    def _set_busy(self, msg: str = "Calcul en cours…") -> None:
+        """Désactive les boutons et lance la barre de progression."""
+        if self._btn_run is not None:
+            self._btn_run.configure(state="disabled")
+        if self._btn_coarse_run is not None:
+            try:
+                self._btn_coarse_run.configure(state="disabled")
+            except tk.TclError:
+                pass
+        if self._status_label is not None:
+            self._status_label.configure(text=msg)
+        if self._progressbar is not None:
+            self._progressbar.start(12)
+
+    def _set_idle(self, msg: str = "") -> None:
+        """Réactive les boutons et stoppe la barre de progression."""
+        if self._progressbar is not None:
+            self._progressbar.stop()
+        if self._btn_run is not None:
+            self._btn_run.configure(state="normal")
+        if self._btn_coarse_run is not None:
+            try:
+                self._btn_coarse_run.configure(state="normal")
+            except tk.TclError:
+                pass
+        if self._status_label is not None:
+            self._status_label.configure(text=msg)
 
     def _set_defaults(self) -> None:
         self.vars["image_path"].set(self.state.image_path)
@@ -628,112 +667,163 @@ class ReconstructionPage(BasePage):
             )
 
             self.state.add_log("Assistant : balayage en cours (plusieurs minutes possibles)…")
-            self.update_idletasks()
-            report = run_coarse_best_search(base, max_patches_cap=cap)
-            b = report.get("best")
-            n_ev = int(report.get("nb_evaluations") or 0)
-            if not b:
-                messagebox.showinfo("Balayage", "Aucun résultat exploitable.")
-                return
-
-            r = b["ratio"]
-            ratio_str = str(int(r)) if abs(r - round(r)) < 1e-9 else str(r)
-            trials = report.get("trials") or []
-            trials_sorted = sorted(trials, key=lambda x: float(x.get("psnr", 0.0)), reverse=True)
-            top3 = trials_sorted[:3]
-            top_lines = "\n".join(
-                f"  {i + 1}. {t['method'].upper()}  Φ={t['measurement_mode']}  {t['ratio']}%  PSNR≈{t['psnr']:.2f} dB"
-                for i, t in enumerate(top3)
-            )
-            self.state.add_log(
-                f"Balayage terminé ({n_ev} évals) : meilleur PSNR indicatif {b['psnr']:.2f} dB — "
-                f"{b['method'].upper()} Φ={b['measurement_mode']} ratio={ratio_str} %"
-            )
-            self._populate_coarse_top3(trials_sorted)
-            messagebox.showinfo(
-                "Balayage terminé",
-                (
-                    f"{n_ev} évaluations (≤ {cap} patchs par tirage).\n"
-                    f"Meilleur PSNR indicatif : {b['psnr']:.2f} dB — {b['method'].upper()}, "
-                    f"Φ={b['measurement_mode']}, {ratio_str} %.\n\n"
-                    f"Top 3 :\n{top_lines}\n\n"
-                    "Utilisez les boutons « Appliquer le 1ᵉʳ / 2ᵉ / 3ᵉ essai » dans l’assistant "
-                    "(réaffichez-le avec « Afficher l’assistant repères » si vous l’avez masqué)."
-                ),
-            )
         except Exception as exc:
             messagebox.showerror("Erreur", str(exc))
+            return
+
+        self._set_busy("Balayage en cours — quelques minutes possibles…")
+
+        def _worker() -> None:
+            try:
+                report = run_coarse_best_search(base, max_patches_cap=cap)
+            except Exception as exc:
+                self.after(0, lambda e=exc: self._on_coarse_error(e))
+                return
+            self.after(0, lambda rep=report, c=cap: self._on_coarse_done(rep, c))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_coarse_error(self, exc: Exception) -> None:
+        self._set_idle()
+        messagebox.showerror("Erreur balayage", str(exc))
+
+    def _on_coarse_done(self, report: dict, cap: int) -> None:
+        b = report.get("best")
+        n_ev = int(report.get("nb_evaluations") or 0)
+        if not b:
+            self._set_idle()
+            messagebox.showinfo("Balayage", "Aucun résultat exploitable.")
+            return
+        b = report.get("best")
+        n_ev = int(report.get("nb_evaluations") or 0)
+        if not b:
+            messagebox.showinfo("Balayage", "Aucun résultat exploitable.")
+            return
+
+        r = b["ratio"]
+        ratio_str = str(int(r)) if abs(r - round(r)) < 1e-9 else str(r)
+        trials = report.get("trials") or []
+        trials_sorted = sorted(trials, key=lambda x: float(x.get("psnr", 0.0)), reverse=True)
+        top3 = trials_sorted[:3]
+        top_lines = "\n".join(
+            f"  {i + 1}. {t['method'].upper()}  Φ={t['measurement_mode']}  {t['ratio']}%  PSNR≈{t['psnr']:.2f} dB"
+            for i, t in enumerate(top3)
+        )
+        self.state.add_log(
+            f"Balayage terminé ({n_ev} évals) : meilleur PSNR indicatif {b['psnr']:.2f} dB — "
+            f"{b['method'].upper()} Φ={b['measurement_mode']} ratio={ratio_str} %"
+        )
+        self._populate_coarse_top3(trials_sorted)
+        messagebox.showinfo(
+            "Balayage terminé",
+            (
+                f"{n_ev} évaluations (≤ {cap} patchs par tirage).\n"
+                f"Meilleur PSNR indicatif : {b['psnr']:.2f} dB — {b['method'].upper()}, "
+                f"Φ={b['measurement_mode']}, {ratio_str} %.\n\n"
+                f"Top 3 :\n{top_lines}\n\n"
+                "Utilisez les boutons « Appliquer le 1ᵉʳ / 2ᵉ / 3ᵉ essai » dans l’assistant "
+                "(réaffichez-le avec « Afficher l’assistant repères » si vous l’avez masqué)."
+            ),
+        )
+        self._set_idle("Balayage terminé ✔")
 
     def run_reconstruction(self) -> None:
-        try:
-            methods = [name for name, var in self.method_vars.items() if var.get()]
-            if not methods:
-                raise ValueError("Sélectionne au moins une méthode.")
+        methods = [name for name, var in self.method_vars.items() if var.get()]
+        if not methods:
+            messagebox.showerror("Erreur", "Sélectionne au moins une méthode.")
+            return
 
-            image_path = self.vars["image_path"].get().strip()
-            output_path = self.vars["output_path"].get().strip()
-            dictionary_train = self.vars["dictionary_train_image_path"].get().strip() or None
+        image_path = self.vars["image_path"].get().strip()
+        output_path = self.vars["output_path"].get().strip()
+        dictionary_train = self.vars["dictionary_train_image_path"].get().strip() or None
 
-            patch_params: dict = {
-                "order": "C",
-                "psnr_stop": bool(self.vars["psnr_stop"].get()),
-                "psnr_target_db": parse_float(self.vars["psnr_target_db"].get(), 45.0),
-                "lambda_lasso": parse_float(self.vars["lambda_lasso"].get(), 0.01),
-                "norm_p": parse_float(self.vars["norm_p"].get(), 0.5),
-                "s_cosamp_auto": bool(self.vars["s_cosamp_auto"].get()),
-            }
-            mp = parse_int(self.vars["max_patches"].get(), None)
-            if mp is not None:
-                patch_params["max_patches"] = mp
+        patch_params: dict = {
+            "order": "C",
+            "psnr_stop": bool(self.vars["psnr_stop"].get()),
+            "psnr_target_db": parse_float(self.vars["psnr_target_db"].get(), 45.0),
+            "lambda_lasso": parse_float(self.vars["lambda_lasso"].get(), 0.01),
+            "norm_p": parse_float(self.vars["norm_p"].get(), 0.5),
+            "s_cosamp_auto": bool(self.vars["s_cosamp_auto"].get()),
+        }
+        mp_val = parse_int(self.vars["max_patches"].get(), None)
+        if mp_val is not None:
+            patch_params["max_patches"] = mp_val
+        m_explicit = self.vars["M_explicit"].get().strip()
+        if m_explicit:
+            patch_params["M"] = int(m_explicit)
+        block_size_placeholder = int(self.vars["block_size"].get())
+        patch_params.pop("B", None)
+        patch_params.pop("nrows", None)
+        patch_params.pop("ncols", None)
+        if mp_val is None:
+            patch_params.pop("max_patches", None)
+        if not m_explicit:
+            patch_params.pop("M", None)
 
-            m_explicit = self.vars["M_explicit"].get().strip()
-            if m_explicit:
-                patch_params["M"] = int(m_explicit)
+        kwargs = dict(
+            image_path=image_path,
+            block_size=block_size_placeholder,
+            ratio=float(self.vars["ratio"].get()),
+            methodes=methods,
+            dictionary_type=dictionary_key_from_combo_selection(self.vars["dictionary_type"].get()),
+            measurement_mode=self.vars["measurement_mode"].get(),
+            output_path=output_path,
+            n_atoms=parse_int(self.vars["n_atoms"].get(), None),
+            n_iter_ksvd=parse_int(self.vars["n_iter_ksvd"].get(), 0) or 0,
+            dictionary_train_image_path=dictionary_train,
+            method_params=self._build_method_params(methods),
+            patch_params=patch_params,
+            seed=parse_int(self.vars["seed"].get(), 0),
+            empreinte_carbone=bool(self.vars["empreinte_carbone"].get()),
+            empreinte_afficher_console=False,
+            empreinte_puissance_w=float(parse_float(self.vars["empreinte_puissance_w"].get(), 45.0) or 45.0),
+            empreinte_g_co2_par_kwh=float(parse_float(self.vars["empreinte_g_co2_par_kwh"].get(), 85.0) or 85.0),
+        )
 
-            block_size_placeholder = int(self.vars["block_size"].get())
-            patch_params.pop("B", None)
-            patch_params.pop("nrows", None)
-            patch_params.pop("ncols", None)
+        label_meths = ", ".join(m.upper() for m in methods)
+        self._set_busy(f"Reconstruction en cours ({label_meths})…")
 
-            if mp is None:
-                patch_params.pop("max_patches", None)
-            if not m_explicit:
-                patch_params.pop("M", None)
+        def _worker() -> None:
+            try:
+                result = run_main(**kwargs)
+            except Exception as exc:
+                self.after(0, lambda e=exc: self._on_reconstruction_error(e))
+                return
+            self.after(0, lambda res=result: self._on_reconstruction_done(
+                res, image_path, output_path, dictionary_train, methods
+            ))
 
-            result = run_main(
-                image_path=image_path,
-                block_size=block_size_placeholder,
-                ratio=float(self.vars["ratio"].get()),
-                methodes=methods,
-                dictionary_type=dictionary_key_from_combo_selection(self.vars["dictionary_type"].get()),
-                measurement_mode=self.vars["measurement_mode"].get(),
-                output_path=output_path,
-                n_atoms=parse_int(self.vars["n_atoms"].get(), None),
-                n_iter_ksvd=parse_int(self.vars["n_iter_ksvd"].get(), 0) or 0,
-                dictionary_train_image_path=dictionary_train,
-                method_params=self._build_method_params(methods),
-                patch_params=patch_params,
-                seed=parse_int(self.vars["seed"].get(), 0),
-                empreinte_carbone=bool(self.vars["empreinte_carbone"].get()),
-                empreinte_afficher_console=False,
-                empreinte_puissance_w=float(parse_float(self.vars["empreinte_puissance_w"].get(), 45.0) or 45.0),
-                empreinte_g_co2_par_kwh=float(parse_float(self.vars["empreinte_g_co2_par_kwh"].get(), 85.0) or 85.0),
-            )
+        threading.Thread(target=_worker, daemon=True).start()
 
-            self.state.image_path = image_path
-            self.state.output_path = output_path
-            self.state.dictionary_train_image_path = dictionary_train or ""
-            self.state.last_result = result
-            self.state.add_log(f"Reconstruction : {', '.join(methods)} (Φ={self.vars['measurement_mode'].get()})")
+    def _on_reconstruction_error(self, exc: Exception) -> None:
+        self._set_idle()
+        messagebox.showerror("Erreur reconstruction", str(exc))
 
-            if bool(self.vars["auto_save"].get()):
-                save_results(result, output_path)
-                saved_dir = latest_subdir(output_path)
-                if saved_dir:
-                    self.state.add_log(f"Sauvegardé : {saved_dir}")
+    def _on_reconstruction_done(
+        self,
+        result: dict,
+        image_path: str,
+        output_path: str,
+        dictionary_train: str | None,
+        methods: list[str],
+    ) -> None:
+        self.state.image_path = image_path
+        self.state.output_path = output_path
+        self.state.dictionary_train_image_path = dictionary_train or ""
+        # Garder l'avant-dernière reconstruction pour la comparaison de dictionnaires
+        if self.state.last_result is not None:
+            self.state.last_result_prev = self.state.last_result
+        self.state.last_result = result
+        phi = self.vars["measurement_mode"].get()
+        self.state.add_log(f"Reconstruction : {", ".join(methods)} (Φ={phi})")
 
-            self.app.refresh_all_pages()
-            self.app.select_tab("Résultats")
-            messagebox.showinfo("Succès", "Reconstruction terminée.")
-        except Exception as exc:
-            messagebox.showerror("Erreur", str(exc))
+        if bool(self.vars["auto_save"].get()):
+            save_results(result, output_path)
+            saved_dir = latest_subdir(output_path)
+            if saved_dir:
+                self.state.add_log(f"Sauvegardé : {saved_dir}")
+
+        self._set_idle("Reconstruction terminée ✔")
+        self.app.refresh_all_pages()
+        self.app.select_tab("Résultats")
+        messagebox.showinfo("Succès", "Reconstruction terminée.")

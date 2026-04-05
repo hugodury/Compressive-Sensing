@@ -18,6 +18,8 @@ from frontend.utils import (
     PHI_COURS_RADIO_LABELS,
     SOLVER_UI_CHOICES,
     build_section6_mp_coherence_figure,
+    build_dico_comparison_table,
+    build_sparsity_figure,
     build_sweep_figure,
     clear_ttk_label_image,
     dictionary_key_from_combo_selection,
@@ -42,11 +44,14 @@ class AnalysesPage(BasePage):
     _TAB_SYNTH_SWEEP = 2
     _TAB_CSV_TABLE = 3
     _TAB_CSV_RAW = 4
+    _TAB_SPARSITY = 5
+    _TAB_DICO_COMPARE = 6
 
     def __init__(self, parent: tk.Misc, app) -> None:
         super().__init__(parent, app)
         self.photo = None
         self.photo_s6 = None
+        self.photo_sparsity = None
         self._csv_paths_cache: list[Path] = []
         self.vars_sweep = {
             "ratios": tk.StringVar(value="15,25,50,75"),
@@ -252,6 +257,39 @@ class AnalysesPage(BasePage):
         hsb = ttk.Scrollbar(tab_text, orient="horizontal", command=self.preview.xview)
         hsb.grid(row=1, column=0, sticky="ew")
         self.preview.configure(xscrollcommand=hsb.set)
+
+        # Onglet Parcimonie
+        tab_sparsity = ttk.Frame(self.view_nb, style="Card.TFrame", padding=8)
+        self.view_nb.add(tab_sparsity, text="Parcimonie")
+        tab_sparsity.columnconfigure(0, weight=1)
+        tab_sparsity.rowconfigure(1, weight=1)
+        ttk.Label(
+            tab_sparsity,
+            text="‖α‖₀ moyen par méthode, moyenné sur tous les patchs reconstruits.",
+            style="CardMuted.TLabel",
+            wraplength=600,
+            justify="left",
+        ).grid(row=0, column=0, sticky="w", pady=(0, 6))
+        self.sparsity_label = ttk.Label(tab_sparsity, style="CardBody.TLabel", anchor="center")
+        self.sparsity_label.grid(row=1, column=0, sticky="nsew")
+
+        tab_dico = ttk.Frame(self.view_nb, style="Card.TFrame", padding=8)
+        self.view_nb.add(tab_dico, text="Comparaison dicos")
+        tab_dico.columnconfigure(0, weight=1)
+        tab_dico.rowconfigure(1, weight=1)
+        self._dico_header = ttk.Label(
+            tab_dico,
+            text="Faites deux reconstructions successives puis venez ici.",
+            style="CardMuted.TLabel",
+            wraplength=700,
+            justify="left",
+        )
+        self._dico_header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        self._dico_tree_frame = ttk.Frame(tab_dico, style="Card.TFrame")
+        self._dico_tree_frame.grid(row=1, column=0, sticky="nsew")
+        self._dico_tree_frame.columnconfigure(0, weight=1)
+        self._dico_tree_frame.rowconfigure(0, weight=1)
+        self._dico_tree = None
 
         self.refresh()
 
@@ -484,6 +522,70 @@ class AnalysesPage(BasePage):
                 self.files_list.selection_set(preferred)
                 self.files_list.see(preferred)
                 self._load_csv_path(csv_paths[preferred])
+
+        # Diagramme de parcimonie
+        result = self.state.last_result
+        alphas = result.get("alphas_by_method", {}) if result else {}
+        if alphas:
+            fig_sp = build_sparsity_figure(alphas)
+            self.photo_sparsity = figure_to_photo(fig_sp)
+            self.sparsity_label.configure(image=self.photo_sparsity, text="")
+        else:
+            clear_ttk_label_image(
+                self.sparsity_label,
+                "Lancez une reconstruction pour afficher le diagramme.",
+            )
+
+        res_b = self.state.last_result
+        res_a = self.state.last_result_prev
+        for w in self._dico_tree_frame.winfo_children():
+            w.destroy()
+        self._dico_tree = None
+        if res_a and res_b:
+            try:
+                cols, rows, label_a, label_b = build_dico_comparison_table(res_a, res_b)
+                self._dico_header.configure(text=f"A : {label_a}    vs    B : {label_b}")
+                tree = ttk.Treeview(
+                    self._dico_tree_frame,
+                    columns=list(range(len(cols))),
+                    show="headings",
+                    height=10,
+                )
+                col_widths = [72, 72, 72, 80, 72, 72, 72, 72, 72, 72, 72, 72]
+                for i, (col, w) in enumerate(zip(cols, col_widths)):
+                    tree.heading(i, text=col)
+                    tree.column(i, width=w, anchor="center", minwidth=55)
+                tree.column(0, width=80, anchor="w")
+                for row in rows:
+                    tag = ""
+                    try:
+                        delta = float(row[3])
+                        tag = "better" if delta > 0 else ("worse" if delta < 0 else "")
+                    except (ValueError, TypeError):
+                        pass
+                    tree.insert("", "end", values=row, tags=(tag,))
+                tree.tag_configure("better", foreground="#16a34a")
+                tree.tag_configure("worse", foreground="#dc2626")
+                hsb = ttk.Scrollbar(self._dico_tree_frame, orient="horizontal", command=tree.xview)
+                tree.configure(xscrollcommand=hsb.set)
+                tree.grid(row=0, column=0, sticky="nsew")
+                hsb.grid(row=1, column=0, sticky="ew")
+                self._dico_tree = tree
+            except Exception as e:
+                ttk.Label(
+                    self._dico_tree_frame,
+                    text=f"Erreur : {e}",
+                    style="CardMuted.TLabel",
+                ).grid(row=0, column=0, pady=20)
+        else:
+            self._dico_header.configure(
+                text="Faites deux reconstructions successives pour comparer les dictionnaires."
+            )
+            ttk.Label(
+                self._dico_tree_frame,
+                text="Aucune comparaison — lancez deux reconstructions successives.",
+                style="CardMuted.TLabel",
+            ).grid(row=0, column=0, pady=20)
 
     def open_folder_s6(self) -> None:
         open_path(self.state.last_section6_dir or "")

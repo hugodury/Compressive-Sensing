@@ -42,6 +42,10 @@ def setupParam(
     empreinte_afficher_console: bool = True,
     empreinte_puissance_w: float = 45.0,
     empreinte_g_co2_par_kwh: float = 85.0,
+    post_filter: bool = False,
+    post_filter_d: int = 5,
+    post_filter_sigma_color: float = 75.0,
+    post_filter_sigma_space: float = 75.0,
 ) -> dict[str, Any]:
     if block_size <= 0:
         raise ValueError("block_size doit être > 0.")
@@ -88,6 +92,10 @@ def setupParam(
         "empreinte_afficher_console": empreinte_afficher_console,
         "empreinte_puissance_w": empreinte_puissance_w,
         "empreinte_g_co2_par_kwh": empreinte_g_co2_par_kwh,
+        "post_filter": post_filter,
+        "post_filter_d": post_filter_d,
+        "post_filter_sigma_color": post_filter_sigma_color,
+        "post_filter_sigma_space": post_filter_sigma_space,
     }
 
 
@@ -109,6 +117,10 @@ def main(
     empreinte_afficher_console: bool = True,
     empreinte_puissance_w: float = 45.0,
     empreinte_g_co2_par_kwh: float = 85.0,
+    post_filter: bool = False,
+    post_filter_d: int = 5,
+    post_filter_sigma_color: float = 75.0,
+    post_filter_sigma_space: float = 75.0,
 ) -> dict[str, Any]:
     params = setupParam(
         image_path=image_path,
@@ -128,6 +140,10 @@ def main(
         empreinte_afficher_console=empreinte_afficher_console,
         empreinte_puissance_w=empreinte_puissance_w,
         empreinte_g_co2_par_kwh=empreinte_g_co2_par_kwh,
+        post_filter=post_filter,
+        post_filter_d=post_filter_d,
+        post_filter_sigma_color=post_filter_sigma_color,
+        post_filter_sigma_space=post_filter_sigma_space,
     )
     return main_backend(params)
 

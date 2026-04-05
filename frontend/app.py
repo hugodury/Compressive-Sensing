@@ -104,7 +104,7 @@ class CompressiveSensingApp(tk.Tk):
             try:
                 x, y = self.winfo_pointerxy()
                 w = self.winfo_containing(x, y)
-            except tk.TclError:
+            except (tk.TclError, KeyError):
                 return
             c = self._closest_scroll_canvas(w)
             if c is None:

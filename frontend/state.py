@@ -12,6 +12,7 @@ class AppState:
     output_path: str = ""
     dictionary_train_image_path: str = ""
     last_result: dict[str, Any] | None = None
+    last_result_prev: dict[str, Any] | None = None  # avant-dernière reconstruction (comparaison dico)
     last_sweep: dict[str, Any] | None = None
     last_section6_dir: str = ""
     last_analyses_empreinte: dict[str, Any] | None = None

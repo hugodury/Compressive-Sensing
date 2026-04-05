@@ -370,6 +370,7 @@ def patch(
             "method doit être parmi : mp, omp, stomp, cosamp, irls, irls_lp, bp, lp, lasso."
         )
 
+    alphas_list: list[np.ndarray] = []  # accumulateur pour le diagramme de parcimonie
     for idx in range(NB_used):
         yj = y[:, idx]
         # psnr_stop : à chaque itération du solveur, si le patch reconstruit dépasse psnr_target_db, on arrête.
@@ -414,6 +415,7 @@ def patch(
         else:
             alpha = solver(A, yj, max_iter=max_iter, epsilon=epsilon, **extra_psnr)
 
+        alphas_list.append(alpha.copy())
         x_hat = D @ alpha  # (N,)
         i_bloc = idx // nc
         j_bloc = idx % nc
@@ -421,6 +423,9 @@ def patch(
         X_rec[i0 : i0 + B_eff, j0 : j0 + B_eff] = x_hat.reshape(B_eff, B_eff, order=order)
 
     out["image_reconstruite"] = X_rec
+    if alphas_list:
+        alphas_mat = np.column_stack(alphas_list)  # (K, NB_used)
+        out["alphas"] = alphas_mat  # coefficients parcimonieux de tous les patchs
     if NB_used < NB:
         out["reconstruction_partielle"] = True
         out["nb_patchs_reconstruits"] = int(NB_used)

@@ -65,6 +65,7 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
 
     images_by_method: dict[str, Any] = {}
     metrics_by_method: dict[str, Any] = {}
+    alphas_by_method: dict[str, Any] = {}
 
     # 2) Reconstruction pour chaque méthode demandée
     for methode in methodes:
@@ -105,6 +106,8 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
         reconstructed = out["image_reconstruite"]
         #reconstructed = apply_bilateral_filter(reconstructed_brut, d=5, sigma_color=50.0, sigma_space=50.0)
         images_by_method[nom] = reconstructed
+        if "alphas" in out:
+            alphas_by_method[nom] = out["alphas"]
 
         # On ne dispose pas encore d'un alpha "global" exposé par patch(),
         # donc on calcule les métriques image + temps ici.
@@ -130,6 +133,7 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
         "original": image_originale,
         "images_by_method": images_by_method,
         "metrics": metrics_by_method,
+        "alphas_by_method": alphas_by_method,
         "n_patches": int(original.shape[1]),
     }
     fusionner_empreinte_dans_resultat(
