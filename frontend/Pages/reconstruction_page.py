@@ -303,6 +303,17 @@ class ReconstructionPage(BasePage):
         ttk.Checkbutton(lf_emp, text="Activer le calcul", variable=self.vars["empreinte_carbone"]).grid(row=1, column=0, sticky="w")
         self._simple_entry(lf_emp, 2, "Hypothèse puissance (W)", self.vars["empreinte_puissance_w"])
         self._simple_entry(lf_emp, 3, "Intensité (g CO₂eq / kWh)", self.vars["empreinte_g_co2_par_kwh"])
+        ttk.Label(
+            lf_emp,
+            text=(
+                "CO₂ : l’onglet Résultats montre une fourchette (temps mural vs temps CPU, mêmes W et g/kWh). "
+                "Stockage : l’onglet Résultats compare seulement fichier avant ↔ données après compression (mesures y + Φ), "
+                "sans inclure les PNG de reconstruction. Détail : stockage_compression.txt (annexe = taille dossier export)."
+            ),
+            style="CardMuted.TLabel",
+            wraplength=720,
+            justify="left",
+        ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(10, 0))
 
         self._assistant_pack_anchor = lf_emp
         self._assistant_outer = ttk.Frame(scroll_inner, style="Panel.TFrame")

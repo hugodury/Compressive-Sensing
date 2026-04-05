@@ -31,6 +31,9 @@ class EstimationEmpreinte:
     hypothese_puissance_w: float
     hypothese_g_co2_par_kwh: float
     message: str
+    # Même P et g/kWh, mais durée = temps CPU processus (borne basse si la machine ne consomme qu’au travail utile)
+    energie_wh_temps_cpu: float | None = None
+    co2e_g_estime_temps_cpu: float | None = None
 
 
 def estimer_empreinte(
@@ -49,6 +52,13 @@ def estimer_empreinte(
     energie_kwh = energie_wh / 1000.0
     co2_g = energie_kwh * float(intensite_g_co2_par_kwh)
 
+    energie_wh_cpu: float | None = None
+    co2_cpu: float | None = None
+    if duree_cpu_process_s is not None and float(duree_cpu_process_s) > 0:
+        h_cpu = float(duree_cpu_process_s) / 3600.0
+        energie_wh_cpu = float(puissance_w) * h_cpu
+        co2_cpu = (energie_wh_cpu / 1000.0) * float(intensite_g_co2_par_kwh)
+
     ctx = f" ({contexte})" if contexte else ""
     cpu_txt = ""
     if duree_cpu_process_s is not None:
@@ -56,10 +66,17 @@ def estimer_empreinte(
 
     msg = (
         f"Empreinte estimée{ctx} : ~ {co2_g:.4f} g CO2eq "
-        f"(≈ {energie_kwh:.6f} kWh, hypothèses {puissance_w:.0f} W, {intensite_g_co2_par_kwh:.0f} g/kWh)."
+        f"(≈ {energie_kwh:.6f} kWh, hypothèses {puissance_w:.0f} W, {intensite_g_co2_par_kwh:.0f} g/kWh) "
+        f"— basé sur le temps mural (souvent un majorant si le CPU n’est pas à pleine charge tout du long)."
         f"{cpu_txt} "
-        "Valeur indicative — voir EMPREINTE.md."
     )
+    if co2_cpu is not None:
+        msg += (
+            f" Borne basse indicative (mêmes W et g/kWh × temps CPU seulement) : ~ {co2_cpu:.4f} g CO2eq. "
+            f"La réalité est souvent entre ces deux ordres de grandeur. "
+        )
+    msg += "Valeur indicative — voir EMPREINTE.md."
+
     return EstimationEmpreinte(
         duree_wall_s=float(duree_secondes),
         duree_cpu_process_s=duree_cpu_process_s,
@@ -68,6 +85,8 @@ def estimer_empreinte(
         hypothese_puissance_w=puissance_w,
         hypothese_g_co2_par_kwh=intensite_g_co2_par_kwh,
         message=msg,
+        energie_wh_temps_cpu=energie_wh_cpu,
+        co2e_g_estime_temps_cpu=co2_cpu,
     )
 
 
@@ -148,7 +167,7 @@ class ChronoEmpreinte:
 
 
 def estimation_dict(est: EstimationEmpreinte) -> dict[str, Any]:
-    return {
+    d: dict[str, Any] = {
         "duree_wall_s": est.duree_wall_s,
         "duree_cpu_process_s": est.duree_cpu_process_s,
         "energie_estimee_wh": est.energie_estimee_wh,
@@ -157,6 +176,11 @@ def estimation_dict(est: EstimationEmpreinte) -> dict[str, Any]:
         "hypothese_g_co2_par_kwh": est.hypothese_g_co2_par_kwh,
         "message": est.message,
     }
+    if est.energie_wh_temps_cpu is not None:
+        d["energie_wh_temps_cpu"] = est.energie_wh_temps_cpu
+    if est.co2e_g_estime_temps_cpu is not None:
+        d["co2e_g_estime_temps_cpu"] = est.co2e_g_estime_temps_cpu
+    return d
 
 
 def afficher_si_demande(est: EstimationEmpreinte, *, actif: bool) -> None:

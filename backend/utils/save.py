@@ -6,8 +6,24 @@ import os
 import time
 import csv
 from typing import Any
+
 import numpy as np
 from PIL import Image
+
+from backend.utils.stockage_compressif import enrichir_stockage_apres_export, stockage_dict_pour_sauvegarde
+
+
+def _taille_totale_dossier(dossier: str) -> int:
+    total = 0
+    for racine, _, fichiers in os.walk(dossier):
+        for fn in fichiers:
+            chemin = os.path.join(racine, fn)
+            try:
+                total += os.path.getsize(chemin)
+            except OSError:
+                pass
+    return total
+
 
 def save_results(resultats: dict[str, Any], output_path: str) -> None:
     """
@@ -71,10 +87,22 @@ def save_results(resultats: dict[str, Any], output_path: str) -> None:
                 "duree_cpu_process_s",
                 "energie_estimee_wh",
                 "co2e_g_estime",
+                "energie_wh_temps_cpu",
+                "co2e_g_estime_temps_cpu",
                 "hypothese_puissance_w",
                 "hypothese_g_co2_par_kwh",
             ):
                 if k in emp and emp[k] is not None:
                     f.write(f"{k}: {emp[k]}\n")
+
+    taille_export = _taille_totale_dossier(dossier_sauvegarde)
+    stk = resultats.get("stockage_bcs")
+    if isinstance(stk, dict):
+        resultats["stockage_bcs"] = enrichir_stockage_apres_export(stk, dossier_sauvegarde, taille_export)
+    stk_final = resultats.get("stockage_bcs")
+    if isinstance(stk_final, dict) and stk_final.get("message"):
+        chemin_stk = os.path.join(dossier_sauvegarde, "stockage_compression.txt")
+        with open(chemin_stk, mode="w", encoding="utf-8") as f:
+            f.write(stockage_dict_pour_sauvegarde(stk_final))
 
     print(f"\nRésultats (Images et CSV) sauvegardés dans :\n -> {dossier_sauvegarde}")

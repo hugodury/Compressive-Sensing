@@ -10,6 +10,7 @@ from frontend.utils import (
     co2eq_par_methode_prorata_temps,
     figure_to_photo,
     format_empreinte_pour_ui,
+    format_stockage_bcs_pour_ui,
     metrics_rows,
 )
 from .base_page import BasePage
@@ -28,6 +29,8 @@ class ResultsPage(BasePage):
         ttk.Label(top, text="Résultats de reconstruction", style="Title.TLabel").pack(anchor="w")
         self.summary_label = ttk.Label(top, text="Aucun résultat pour le moment.", style="Muted.TLabel")
         self.summary_label.pack(anchor="w", pady=(6, 0))
+        self.stockage_label = ttk.Label(top, text="", style="Muted.TLabel", wraplength=960, justify="left")
+        self.stockage_label.pack(anchor="w", pady=(4, 0))
 
         body = ttk.Frame(self, style="App.TFrame")
         body.grid(row=1, column=0, sticky="nsew")
@@ -111,6 +114,7 @@ class ResultsPage(BasePage):
 
         if not result:
             self.summary_label.configure(text="Aucun résultat pour le moment.")
+            self.stockage_label.configure(text="")
             clear_ttk_label_image(self.chart_label, "Lance une reconstruction depuis l'onglet dédié.")
             self.empreinte_table_note.configure(
                 text="Activez « Empreinte carbone » dans Reconstruction pour remplir la colonne CO₂eq (répartition au prorata du temps par méthode)."
@@ -152,6 +156,9 @@ class ResultsPage(BasePage):
                 text="Colonne CO₂eq : activez le calcul dans Reconstruction. "
                 + d_emp
             )
+
+        sk_txt = format_stockage_bcs_pour_ui(result.get("stockage_bcs") if isinstance(result.get("stockage_bcs"), dict) else None)
+        self.stockage_label.configure(text=sk_txt)
 
         best = max(rows, key=lambda x: x[1]) if rows else None
         if best:

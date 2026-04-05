@@ -67,7 +67,7 @@ Les métriques exposent `s_cosamp_utilise` et `cosamp_s_mode` (`fixe` ou `estime
 
 ## Empreinte carbone (indicatif)
 
-Aligné avec l’objectif « sensibilisation » du sujet : estimation **CO₂eq** à partir du temps CPU, d’une puissance machine supposée et d’un facteur g/kWh. Sortie **stderr** + `empreinte_estimation.txt` avec les résultats. Voir **`EMPREINTE.md`**.
+Aligné avec l’objectif « sensibilisation » du sujet : estimation **CO₂eq** à partir du temps mural (et **fourchette** avec le temps CPU processus quand il est mesuré), d’une puissance machine supposée et d’un facteur g/kWh. Sortie **stderr** + `empreinte_estimation.txt`. À chaque reconstruction, un modèle **stockage** compare la taille du **fichier avant** au volume **après compression seule** (mesures **y** float32 + **Φ**) — pas la taille des PNG reconstruits ; une annexe dans `stockage_compression.txt` rappelle la taille du dossier d’export si besoin. Voir **`EMPREINTE.md`**.
 
 Paramètres : `empreinte_carbone`, `empreinte_afficher_console`, `empreinte_puissance_w`, `empreinte_g_co2_par_kwh`. Avec `run_pipeline`, synthèse dans `empreinte_session` ; l’affichage par étape dans `main_backend` est limité pour éviter le double compte.
 

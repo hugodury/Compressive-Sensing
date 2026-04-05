@@ -13,6 +13,8 @@ Le projet affiche une **estimation indicative** de l’impact climatique lié à
    `g CO₂eq ≈ (énergie_kWh) × intensité_carbone (g/kWh)`  
    avec par défaut **~85 g/kWh**, ordre de grandeur du mix électrique français (à ajuster pour un autre pays ou une autre source).
 
+5. **Fourchette mural / CPU** : le même produit « puissance × durée » est aussi calculé avec le **temps CPU processus** (Unix `getrusage`) lorsqu’il est disponible. Cela donne une **borne basse indicative** si l’énergie ne correspondait qu’aux secondes CPU comptées ; le **temps mural** reste en général un **majorant** plus prudent pour un PC qui fait autre chose en parallèle. La réalité se situe souvent **entre** ces deux ordres de grandeur.
+
 Les constantes sont modifiables dans `setupParam` / le dict `params` :
 
 - `empreinte_puissance_w`
@@ -25,7 +27,8 @@ Pour calculer sans afficher sur la console : `empreinte_afficher_console=False`.
 
 - Chaque résultat de `main_backend` peut contenir la clé `empreinte` (détails + message lisible).
 - Lors d’un `run_pipeline`, une synthèse session est dans `empreinte_session`.
-- `save_results` écrit `empreinte_estimation.txt` dans le dossier horodaté si `empreinte` est présent.
+- `save_results` écrit `empreinte_estimation.txt` dans le dossier horodaté si `empreinte` est présent (y compris `co2e_g_estime_temps_cpu` si mesuré).
+- `save_results` écrit aussi `stockage_compression.txt` : comparaison taille raster/fichier vs modèle théorique « mesures + Φ » (voir `backend/utils/stockage_compressif.py`).
 
 ## Choix du projet pour limiter l’impact
 

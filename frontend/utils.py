@@ -139,14 +139,49 @@ def format_empreinte_pour_ui(emp: dict[str, Any] | None) -> tuple[str, str]:
     cpu = emp.get("duree_cpu_process_s")
     pw = float(emp.get("hypothese_puissance_w", 0.0))
     gkwh = float(emp.get("hypothese_g_co2_par_kwh", 0.0))
-    main = f"≈ {co2:.4f} g CO₂eq   ·   ≈ {kwh:.6f} kWh   ·   {wall:.1f} s (temps total)"
+    main = f"≈ {co2:.4f} g CO₂eq   ·   ≈ {kwh:.6f} kWh   ·   {wall:.1f} s (temps mural)"
     if cpu is not None:
         main += f"   ·   CPU processus ~ {float(cpu):.1f} s"
+    co2_cpu = emp.get("co2e_g_estime_temps_cpu")
+    if co2_cpu is not None:
+        lo, hi = min(co2, float(co2_cpu)), max(co2, float(co2_cpu))
+        if abs(hi - lo) > 1e-9:
+            main += f"   ·   fourchette indicative {lo:.4f}–{hi:.4f} g (CPU vs mural, mêmes hypothèses W)"
     detail = (
         f"Hypothèses : ≈ {pw:.0f} W (machine), ≈ {gkwh:.0f} g CO₂eq/kWh (mix électrique). "
+        f"Le temps mural donne souvent un ordre de grandeur haut ; le temps CPU une borne basse si l’énergie suivait "
+        f"uniquement le travail processeur (voir message complet dans l’export). "
         f"{UI_HELP_EMPREINTE_RESULTS} Voir aussi EMPREINTE.md à la racine du projet."
     )
     return main, detail
+
+
+def format_stockage_bcs_pour_ui(stk: dict[str, Any] | None) -> str:
+    """Résumé IHM : uniquement avant (fichier) → après compression (mesures y + Φ), sans reconstruction."""
+    if not isinstance(stk, dict):
+        return ""
+    ref = int(stk.get("octets_avant_fichier_ou_raster") or stk.get("octets_reference_pour_gain") or 0)
+    mod = int(stk.get("octets_modele_mesures_plus_phi") or 0)
+    if ref <= 0:
+        return ""
+    pct = float(stk.get("taux_reduction_vs_reference_pct") or 0.0)
+    av_mib = float(stk.get("avant_compression_mib") or ref / (1024.0**2))
+    ap_mib = float(stk.get("apres_compression_mib") or mod / (1024.0**2))
+    g_mib = float(stk.get("gain_mib") or (ref - mod) / (1024.0**2))
+    av_ko = float(stk.get("avant_compression_ko") or ref / 1024.0)
+    ap_ko = float(stk.get("apres_compression_ko") or mod / 1024.0)
+    g_ko = float(stk.get("gain_ko") or (ref - mod) / 1024.0)
+    est_fichier = bool(stk.get("avant_est_taille_fichier_disque"))
+    avant_lbl = "Avant (fichier image)" if est_fichier else "Avant (raster recadré)"
+    if g_mib >= 0:
+        gain_txt = f"Gain (compression seule) : {g_mib:.4f} MiB ({g_ko:.1f} ko), ~{pct:.1f} % de moins qu’avant"
+    else:
+        gain_txt = f"Pas de gain : mesures+Φ dépassent l’avant de {-g_mib:.4f} MiB ({-g_ko:.1f} ko)"
+    return (
+        f"{avant_lbl} : {av_mib:.4f} MiB ({av_ko:.1f} ko) · "
+        f"Après compression (mesures y + Φ uniquement) : {ap_mib:.4f} MiB ({ap_ko:.1f} ko). {gain_txt}. "
+        f"Détails : stockage_compression.txt."
+    )
 
 
 def clear_ttk_label_image(label: tk.Widget, text: str) -> None:

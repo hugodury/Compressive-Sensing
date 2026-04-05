@@ -14,6 +14,7 @@ from typing import Any
 from backend.Tratement_Image import patch
 from backend.utils.Metrics import compute_all_metrics
 from backend.utils.empreinte import fusionner_empreinte_dans_resultat
+from backend.utils.stockage_compressif import estimer_stockage_bcs
 
 def main_backend(params: dict[str, Any]) -> dict[str, Any]:
     t_wall_debut = time.perf_counter()
@@ -136,6 +137,20 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
         "alphas_by_method": alphas_by_method,
         "n_patches": int(original.shape[1]),
     }
+    if methodes:
+        m0 = metrics_by_method.get(methodes[0], {})
+        M_val = m0.get("nb_mesures_M")
+        if M_val is not None:
+            hr, wr = image_originale.shape
+            img_path = str(params.get("image_path") or "").strip() or None
+            resultat["stockage_bcs"] = estimer_stockage_bcs(
+                int(hr),
+                int(wr),
+                int(resultat["n_patches"]),
+                int(patch_B),
+                int(M_val),
+                chemin_fichier_source=img_path,
+            )
     fusionner_empreinte_dans_resultat(
         resultat,
         params,
