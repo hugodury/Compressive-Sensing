@@ -365,7 +365,7 @@ if __name__ == "__main__":
 
     params = setupParam(
         image_path=IMAGE_TEST,
-        block_size=8,
+        block_size= 8,
         ratio=0.25,
         methodes=METHODES_A_TESTER,
         dictionary_type="dct",
