@@ -7,6 +7,7 @@ demandé (DCT, mixte, K-SVD…). CoSaMP : voir les champs cosamp_s / cosamp_s_mo
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import numpy as np
@@ -169,6 +170,7 @@ def patch(
     n_iter_ksvd: int = 0,
     ksvd_train_patches: int | None = None,
     dictionary_train_image_path: str | None = None,
+    max_time_s: float | None = None,
 ) -> Any:
     """
     Découpe une image en patchs (vecteurs colonnes).
@@ -179,6 +181,9 @@ def patch(
     `dictionary_train_image_path` (sujet §7) : pour mixte / K-SVD, apprend ou initialise `D` à partir des patchs
     de cette image ; la reconstruction utilise toujours les patchs de `image_path`.
     """
+    t_start = time.perf_counter()
+    deadline_s = (t_start + float(max_time_s)) if (max_time_s is not None and max_time_s > 0.0) else None
+
     # 1) Découpage : on lit l'image sous forme de matrice 2D puis on découpe en blocs.
     X = load_grayscale_matrix(image_path)
     matrice_patchs, meta = image_to_patch_vectors(
@@ -212,6 +217,14 @@ def patch(
     # (Si seulement D est fourni, on ne peut pas reconstruire sans Phi.)
     if ratio is None and M is None and Phi is None:
         return out if as_dict else out["matrice_patchs"]
+    if deadline_s is not None and time.perf_counter() >= deadline_s:
+        out["image_reconstruite"] = np.zeros((meta[0], meta[1]), dtype=np.float64)
+        out["reconstruction_partielle"] = True
+        out["nb_patchs_reconstruits"] = 0
+        out["nb_patchs_total"] = int(matrice_patchs.shape[1])
+        out["time_limit_reached"] = True
+        out["max_time_s"] = float(max_time_s if max_time_s is not None else 0.0)
+        return out if as_dict else out["image_reconstruite"]
 
     # --- Reconstruction (decoder BCS) ---
     # Import local pour éviter les imports circulaires.
@@ -371,7 +384,12 @@ def patch(
         )
 
     alphas_list: list[np.ndarray] = []  # accumulateur pour le diagramme de parcimonie
+    time_limit_reached = False
+    nb_reconstruits_effectifs = 0
     for idx in range(NB_used):
+        if deadline_s is not None and time.perf_counter() >= deadline_s:
+            time_limit_reached = True
+            break
         yj = y[:, idx]
         # psnr_stop : à chaque itération du solveur, si le patch reconstruit dépasse psnr_target_db, on arrête.
         # Utile surtout en expérimentation (il faut le patch vrai, donc cas « simulation » où on connaît x).
@@ -383,14 +401,17 @@ def patch(
                 "D_recon": D,
                 "psnr_target_db": psnr_target_db,
             }
+        extra_time: dict[str, Any] = {}
+        if deadline_s is not None:
+            extra_time["deadline_s"] = float(deadline_s)
 
         if method_norm == "stomp":
             alpha = solver(
-                A, yj, max_iter=max_iter, eps=epsilon, t=t_stomp, **extra_psnr
+                A, yj, max_iter=max_iter, eps=epsilon, t=t_stomp, **extra_psnr, **extra_time
             )
         elif method_norm == "cosamp":
             alpha = solver(
-                A, yj, max_iter=max_iter, epsilon=epsilon, s=s_eff_cosamp, **extra_psnr
+                A, yj, max_iter=max_iter, epsilon=epsilon, s=s_eff_cosamp, **extra_psnr, **extra_time
             )
         elif method_norm in ("irls", "irls_lp", "irls_p"):
             alpha = solver(
@@ -400,9 +421,10 @@ def patch(
                 max_iter=max_iter,
                 epsilon=epsilon,
                 **extra_psnr,
+                **extra_time,
             )
         elif method_norm in ("bp", "basis_pursuit", "lp"):
-            alpha = solver(A, yj, **extra_psnr)
+            alpha = solver(A, yj, **extra_psnr, **extra_time)
         elif method_norm in ("lasso", "lasso_ista"):
             alpha = solver(
                 A,
@@ -411,9 +433,10 @@ def patch(
                 max_iter=max_iter,
                 tol=epsilon,
                 **extra_psnr,
+                **extra_time,
             )
         else:
-            alpha = solver(A, yj, max_iter=max_iter, epsilon=epsilon, **extra_psnr)
+            alpha = solver(A, yj, max_iter=max_iter, epsilon=epsilon, **extra_psnr, **extra_time)
 
         alphas_list.append(alpha.copy())
         x_hat = D @ alpha  # (N,)
@@ -421,15 +444,19 @@ def patch(
         j_bloc = idx % nc
         i0, j0 = i_bloc * B_eff, j_bloc * B_eff
         X_rec[i0 : i0 + B_eff, j0 : j0 + B_eff] = x_hat.reshape(B_eff, B_eff, order=order)
+        nb_reconstruits_effectifs += 1
 
     out["image_reconstruite"] = X_rec
     if alphas_list:
         alphas_mat = np.column_stack(alphas_list)  # (K, NB_used)
         out["alphas"] = alphas_mat  # coefficients parcimonieux de tous les patchs
-    if NB_used < NB:
+    if NB_used < NB or time_limit_reached:
         out["reconstruction_partielle"] = True
-        out["nb_patchs_reconstruits"] = int(NB_used)
+        out["nb_patchs_reconstruits"] = int(nb_reconstruits_effectifs)
         out["nb_patchs_total"] = int(NB)
+    if time_limit_reached:
+        out["time_limit_reached"] = True
+        out["max_time_s"] = float(max_time_s if max_time_s is not None else 0.0)
     out["phi"] = Phi
     out["D"] = D
     M_phi, N_phi = Phi.shape

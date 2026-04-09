@@ -11,6 +11,7 @@ par un PSNR cible si on fournit le patch original (cas expérimental / debug).
 from __future__ import annotations
 
 import math
+import time
 from typing import Callable
 
 import numpy as np
@@ -38,6 +39,11 @@ def _psnr_stop(
     return not math.isinf(p) and p >= float(psnr_target_db)
 
 
+def _deadline_reached(deadline_s: float | None) -> bool:
+    """Retourne True si l'échéance d'exécution est dépassée."""
+    return deadline_s is not None and time.perf_counter() >= float(deadline_s)
+
+
 def mp(
     D: np.ndarray,
     x: np.ndarray,
@@ -57,7 +63,7 @@ def mp(
     sur tout le support (étapes 2–3 = coeff. 1D puis résiduel non réorthogonalisé au sous-espace).
     PSNR d’arrêt optionnel si reference_for_psnr + D_recon + seuil.
     """
-    _ = kwargs
+    deadline_s = kwargs.get("deadline_s")
     D = np.asarray(D, dtype=np.float64)
     x = np.asarray(x, dtype=np.float64)
     _, K = D.shape
@@ -68,6 +74,8 @@ def mp(
     denom = float(np.linalg.norm(D))
     k = 0
     while k < max_iter and np.linalg.norm(residuel) > epsilon:
+        if _deadline_reached(deadline_s):
+            break
         corr = D.T @ residuel
         if denom > 0:
             corr = np.abs(corr) / denom
@@ -107,7 +115,7 @@ def omp(
     OMP : un atome par tour, mais à chaque fois moindres carrés sur **tout** le support courant
     (résiduel orthogonal à Vect(D_P)) — plus coûteux que MP, meilleure qualité en général.
     """
-    _ = kwargs
+    deadline_s = kwargs.get("deadline_s")
     D = np.asarray(D, dtype=np.float64)
     x = np.asarray(x, dtype=np.float64)
     _, K = D.shape
@@ -121,6 +129,8 @@ def omp(
     k = 0
     alpha_k = np.zeros(0, dtype=np.float64)
     while k < max_iter and np.linalg.norm(residuel) > epsilon:
+        if _deadline_reached(deadline_s):
+            break
         corr = D.T @ residuel
         if denom > 0:
             corr = np.abs(corr) / denom
@@ -163,7 +173,7 @@ def stomp(
     StOMP : même idée de MC sur le support qu’OMP après sélection, mais plusieurs atomes
     peuvent entrer **en même temps** (seuillage du cours) au lieu d’un seul par itération.
     """
-    _ = kwargs
+    deadline_s = kwargs.get("deadline_s")
     D = np.asarray(D, dtype=np.float64)
     x = np.asarray(x, dtype=np.float64)
     _, K = D.shape
@@ -174,6 +184,8 @@ def stomp(
 
     k = 0
     while k < max_iter and np.linalg.norm(residuel) > eps:
+        if _deadline_reached(deadline_s):
+            break
         C = np.zeros(K, dtype=np.float64)
         for j in range(K):
             dj = D[:, j]
@@ -225,7 +237,7 @@ def cosamp(
     CoSaMP : besoin d’un entier s (support final). Arrêt classique : ||r|| < epsilon ou max_iter.
     Si reference_for_psnr est fourni avec D_recon et psnr_target_db, arrêt dès PSNR atteint.
     """
-    _ = kwargs
+    deadline_s = kwargs.get("deadline_s")
     D = np.asarray(D, dtype=np.float64)
     x = np.asarray(x, dtype=np.float64)
     _, K = D.shape
@@ -240,6 +252,8 @@ def cosamp(
 
     k = 1
     while k <= max_iter and np.linalg.norm(residuel) > epsilon:
+        if _deadline_reached(deadline_s):
+            break
         denom = float(np.linalg.norm(D))
         c = D.T @ residuel
         if denom > 0:
@@ -297,7 +311,7 @@ def irls(
 
     Poids : wᵢ ∝ (|αᵢ|+δ)^{p-2} à chaque itération (W dépend de l’itéré précédent).
     """
-    _ = kwargs
+    deadline_s = kwargs.get("deadline_s")
     if not (0.0 < p < 1.0):
         raise ValueError(
             "irls : p doit être dans ]0, 1[ (comme au §5.2). Pour la norme L1, utiliser bp ou lp."
@@ -317,6 +331,8 @@ def irls(
 
     eye_m = np.eye(M, dtype=np.float64)
     for _ in range(max_iter):
+        if _deadline_reached(deadline_s):
+            break
         t = np.abs(alpha) + delta
         # Poids pour la quadratisation de ∑ |α_i|^p : en pratique w_i ∝ t^{p-2}
         w_diag = (0.5 * p) * np.power(t, p - 2.0)
@@ -414,7 +430,7 @@ def lasso_ista(
     Résolu par ISTA (gradient + seuillage doux). Utile quand on préfère un
     terme quadratique de fidélité plutôt que l’égalité stricte Aα = y.
     """
-    _ = kwargs
+    deadline_s = kwargs.get("deadline_s")
     A = np.asarray(A, dtype=np.float64)
     y = np.asarray(y, dtype=np.float64).ravel()
     _, K = A.shape
@@ -427,6 +443,8 @@ def lasso_ista(
 
     alpha = np.zeros(K, dtype=np.float64)
     for _ in range(max_iter):
+        if _deadline_reached(deadline_s):
+            break
         grad = A.T @ (A @ alpha - y)
         alpha_new = _soft_threshold(alpha - step * grad, lambda_reg * step)
         if np.linalg.norm(alpha_new - alpha) < tol * max(1.0, np.linalg.norm(alpha)):

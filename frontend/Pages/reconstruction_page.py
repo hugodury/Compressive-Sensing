@@ -118,6 +118,7 @@ class ReconstructionPage(BasePage):
             "norm_p",
             "psnr_target_db",
             "lambda_lasso",
+            "max_time_s",
             "empreinte_puissance_w",
             "empreinte_g_co2_par_kwh",
         ):
@@ -203,6 +204,7 @@ class ReconstructionPage(BasePage):
         lf_sol.pack(fill="x", pady=(0, 10))
         self._simple_entry(lf_sol, 0, "max_iter (itératifs)", self.vars["max_iter"])
         self._simple_entry(lf_sol, 1, "epsilon (résidu / tol)", self.vars["epsilon"])
+        self._simple_entry(lf_sol, 2, "Temps max d'exécution par méthode (s, vide = illimité)", self.vars["max_time_s"])
         ttk.Label(
             lf_sol,
             text=(
@@ -212,8 +214,8 @@ class ReconstructionPage(BasePage):
             style="CardMuted.TLabel",
             wraplength=620,
             justify="left",
-        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 8))
-        self._simple_entry(lf_sol, 3, "Nombre max de patchs à reconstruire (vide = toute l’image)", self.vars["max_patches"])
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        self._simple_entry(lf_sol, 4, "Nombre max de patchs à reconstruire (vide = toute l’image)", self.vars["max_patches"])
         ttk.Label(
             lf_sol,
             text=(
@@ -223,12 +225,12 @@ class ReconstructionPage(BasePage):
             style="CardMuted.TLabel",
             wraplength=680,
             justify="left",
-        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(0, 8))
-        self._simple_entry(lf_sol, 5, "Seed reproductibilité", self.vars["seed"])
+        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        self._simple_entry(lf_sol, 6, "Seed reproductibilité", self.vars["seed"])
         ttk.Checkbutton(lf_sol, text="Arrêt si PSNR patch ≥ cible (expérimental)", variable=self.vars["psnr_stop"]).grid(
-            row=6, column=0, columnspan=2, sticky="w", pady=6
+            row=7, column=0, columnspan=2, sticky="w", pady=6
         )
-        self._simple_entry(lf_sol, 7, "PSNR cible (dB)", self.vars["psnr_target_db"])
+        self._simple_entry(lf_sol, 8, "PSNR cible (dB)", self.vars["psnr_target_db"])
         ttk.Label(
             lf_sol,
             text=(
@@ -239,7 +241,7 @@ class ReconstructionPage(BasePage):
             style="CardMuted.TLabel",
             wraplength=620,
             justify="left",
-        ).grid(row=8, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        ).grid(row=9, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
         lf_stomp = ttk.LabelFrame(scroll_inner, text=" StOMP — paramètres spécifiques ", padding=12)
         lf_stomp.pack(fill="x", pady=(0, 10))
@@ -500,6 +502,7 @@ class ReconstructionPage(BasePage):
         self.vars["norm_p"].set("0.5")
         self.vars["psnr_target_db"].set("45")
         self.vars["lambda_lasso"].set("0.01")
+        self.vars["max_time_s"].set("")
         self.vars["measurement_mode"].set("phi4")
         for disp, key in DICTIONARY_COMBO_TO_KEY.items():
             if key == "dct":
@@ -656,6 +659,11 @@ class ReconstructionPage(BasePage):
                 "norm_p": parse_float(self.vars["norm_p"].get(), 0.5),
                 "s_cosamp_auto": bool(self.vars["s_cosamp_auto"].get()),
             }
+            max_time_s = parse_float(self.vars["max_time_s"].get(), None)
+            if max_time_s is not None:
+                if max_time_s <= 0:
+                    raise ValueError("Le temps max d'exécution doit être > 0 s.")
+                patch_params["max_time_s"] = float(max_time_s)
 
             base = setupParam(
                 image_path=image_path,
@@ -756,6 +764,12 @@ class ReconstructionPage(BasePage):
             "norm_p": parse_float(self.vars["norm_p"].get(), 0.5),
             "s_cosamp_auto": bool(self.vars["s_cosamp_auto"].get()),
         }
+        max_time_s = parse_float(self.vars["max_time_s"].get(), None)
+        if max_time_s is not None:
+            if max_time_s <= 0:
+                messagebox.showerror("Erreur", "Le temps max d'exécution doit être > 0 s.")
+                return
+            patch_params["max_time_s"] = float(max_time_s)
         mp_val = parse_int(self.vars["max_patches"].get(), None)
         if mp_val is not None:
             patch_params["max_patches"] = mp_val
@@ -834,7 +848,25 @@ class ReconstructionPage(BasePage):
             if saved_dir:
                 self.state.add_log(f"Sauvegardé : {saved_dir}")
 
+        time_limited_methods = [
+            str(m).upper()
+            for m, met in (result.get("metrics") or {}).items()
+            if bool((met or {}).get("time_limit_reached"))
+        ]
+        if time_limited_methods:
+            self.state.add_log(
+                "Arrêt sur limite de temps : " + ", ".join(time_limited_methods)
+            )
+
         self._set_idle("Reconstruction terminée ✔")
         self.app.refresh_all_pages()
         self.app.select_tab("Résultats")
-        messagebox.showinfo("Succès", "Reconstruction terminée.")
+        if time_limited_methods:
+            messagebox.showwarning(
+                "Terminé (limite de temps atteinte)",
+                "La reconstruction est terminée, mais la limite de temps a été atteinte pour : "
+                + ", ".join(time_limited_methods)
+                + ".\nLe résultat peut être partiel.",
+            )
+        else:
+            messagebox.showinfo("Succès", "Reconstruction terminée.")

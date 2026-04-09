@@ -37,6 +37,7 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
     patch_lambda_lasso = patch_params.get("lambda_lasso", 0.01)
     patch_norm_p = patch_params.get("norm_p", 0.5)
     patch_s_cosamp_auto = patch_params.get("s_cosamp_auto", False)
+    patch_max_time_s = patch_params.get("max_time_s")
     patch_n_iter_ksvd = int(patch_params.get("n_iter_ksvd", params.get("n_iter_ksvd", 0)))
     patch_ksvd_train = patch_params.get("ksvd_train_patches")
     patch_dict_train = patch_params.get("dictionary_train_image_path", params.get("dictionary_train_image_path"))
@@ -101,6 +102,7 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
             n_iter_ksvd=patch_n_iter_ksvd,
             ksvd_train_patches=patch_ksvd_train,
             dictionary_train_image_path=patch_dict_train,
+            max_time_s=patch_max_time_s,
         )
         t1 = time.perf_counter()
 
@@ -126,6 +128,11 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
             metrics["s_cosamp_utilise"] = out["s_cosamp_utilise"]
         if out.get("cosamp_s_mode") is not None:
             metrics["cosamp_s_mode"] = out["cosamp_s_mode"]
+        if out.get("time_limit_reached") is not None:
+            metrics["time_limit_reached"] = bool(out["time_limit_reached"])
+            metrics["max_time_s"] = out.get("max_time_s")
+            metrics["nb_patchs_reconstruits"] = out.get("nb_patchs_reconstruits")
+            metrics["nb_patchs_total"] = out.get("nb_patchs_total")
         metrics_by_method[nom] = metrics
 
     resultat: dict[str, Any] = {
