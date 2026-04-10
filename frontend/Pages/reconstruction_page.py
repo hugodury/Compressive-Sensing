@@ -533,6 +533,29 @@ class ReconstructionPage(BasePage):
         }
         return {m: full[m] for m in methods if m in full}
 
+    def _build_common_patch_params(self) -> dict[str, Any]:
+        """Construit les paramètres patch communs (utilisés par reconstruction et balayage)."""
+        patch_params: dict[str, Any] = {
+            "order": "C",
+            "psnr_stop": bool(self.vars["psnr_stop"].get()),
+            "psnr_target_db": parse_float(self.vars["psnr_target_db"].get(), 45.0),
+            "lambda_lasso": parse_float(self.vars["lambda_lasso"].get(), 0.01),
+            "norm_p": parse_float(self.vars["norm_p"].get(), 0.5),
+            "s_cosamp_auto": bool(self.vars["s_cosamp_auto"].get()),
+        }
+        max_time_s = parse_float(self.vars["max_time_s"].get(), None)
+        if max_time_s is not None:
+            if max_time_s <= 0:
+                raise ValueError("Le temps max d'exécution doit être > 0 s.")
+            patch_params["max_time_s"] = float(max_time_s)
+        return patch_params
+
+    def _empreinte_hypotheses(self) -> tuple[float, float]:
+        """Renvoie les hypothèses d'empreinte (W, gCO2/kWh) avec valeurs par défaut."""
+        puissance_w = float(parse_float(self.vars["empreinte_puissance_w"].get(), 45.0) or 45.0)
+        intensite = float(parse_float(self.vars["empreinte_g_co2_par_kwh"].get(), 85.0) or 85.0)
+        return puissance_w, intensite
+
     @staticmethod
     def _dict_display_for_key(key: str) -> str:
         for disp, k in DICTIONARY_COMBO_TO_KEY.items():
@@ -651,19 +674,8 @@ class ReconstructionPage(BasePage):
             dictionary_train = self.vars["dictionary_train_image_path"].get().strip() or None
             block_size_placeholder = int(self.vars["block_size"].get())
 
-            patch_params: dict = {
-                "order": "C",
-                "psnr_stop": bool(self.vars["psnr_stop"].get()),
-                "psnr_target_db": parse_float(self.vars["psnr_target_db"].get(), 45.0),
-                "lambda_lasso": parse_float(self.vars["lambda_lasso"].get(), 0.01),
-                "norm_p": parse_float(self.vars["norm_p"].get(), 0.5),
-                "s_cosamp_auto": bool(self.vars["s_cosamp_auto"].get()),
-            }
-            max_time_s = parse_float(self.vars["max_time_s"].get(), None)
-            if max_time_s is not None:
-                if max_time_s <= 0:
-                    raise ValueError("Le temps max d'exécution doit être > 0 s.")
-                patch_params["max_time_s"] = float(max_time_s)
+            patch_params = self._build_common_patch_params()
+            puissance_w, intensite = self._empreinte_hypotheses()
 
             base = setupParam(
                 image_path=image_path,
@@ -681,8 +693,8 @@ class ReconstructionPage(BasePage):
                 seed=parse_int(self.vars["seed"].get(), 0),
                 empreinte_carbone=False,
                 empreinte_afficher_console=False,
-                empreinte_puissance_w=float(parse_float(self.vars["empreinte_puissance_w"].get(), 45.0) or 45.0),
-                empreinte_g_co2_par_kwh=float(parse_float(self.vars["empreinte_g_co2_par_kwh"].get(), 85.0) or 85.0),
+                empreinte_puissance_w=puissance_w,
+                empreinte_g_co2_par_kwh=intensite,
             )
 
             self.state.add_log("Assistant : balayage en cours (plusieurs minutes possibles)…")
@@ -756,20 +768,12 @@ class ReconstructionPage(BasePage):
         output_path = self.vars["output_path"].get().strip()
         dictionary_train = self.vars["dictionary_train_image_path"].get().strip() or None
 
-        patch_params: dict = {
-            "order": "C",
-            "psnr_stop": bool(self.vars["psnr_stop"].get()),
-            "psnr_target_db": parse_float(self.vars["psnr_target_db"].get(), 45.0),
-            "lambda_lasso": parse_float(self.vars["lambda_lasso"].get(), 0.01),
-            "norm_p": parse_float(self.vars["norm_p"].get(), 0.5),
-            "s_cosamp_auto": bool(self.vars["s_cosamp_auto"].get()),
-        }
-        max_time_s = parse_float(self.vars["max_time_s"].get(), None)
-        if max_time_s is not None:
-            if max_time_s <= 0:
-                messagebox.showerror("Erreur", "Le temps max d'exécution doit être > 0 s.")
-                return
-            patch_params["max_time_s"] = float(max_time_s)
+        try:
+            patch_params = self._build_common_patch_params()
+        except ValueError as exc:
+            messagebox.showerror("Erreur", str(exc))
+            return
+        puissance_w, intensite = self._empreinte_hypotheses()
         mp_val = parse_int(self.vars["max_patches"].get(), None)
         if mp_val is not None:
             patch_params["max_patches"] = mp_val
@@ -801,8 +805,8 @@ class ReconstructionPage(BasePage):
             seed=parse_int(self.vars["seed"].get(), 0),
             empreinte_carbone=bool(self.vars["empreinte_carbone"].get()),
             empreinte_afficher_console=False,
-            empreinte_puissance_w=float(parse_float(self.vars["empreinte_puissance_w"].get(), 45.0) or 45.0),
-            empreinte_g_co2_par_kwh=float(parse_float(self.vars["empreinte_g_co2_par_kwh"].get(), 85.0) or 85.0),
+            empreinte_puissance_w=puissance_w,
+            empreinte_g_co2_par_kwh=intensite,
         )
 
         label_meths = ", ".join(m.upper() for m in methods)

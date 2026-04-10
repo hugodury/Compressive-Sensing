@@ -16,13 +16,41 @@ from backend.utils.Metrics import compute_all_metrics
 from backend.utils.empreinte import fusionner_empreinte_dans_resultat
 from backend.utils.stockage_compressif import estimer_stockage_bcs
 
+
+def _normaliser_methodes(methodes: str | list[str]) -> list[str]:
+    """Accepte une méthode seule (str) ou une liste, et renvoie toujours une liste."""
+    if isinstance(methodes, str):
+        return [methodes]
+    return list(methodes)
+
+
+def _ajouter_infos_patch_dans_metrics(metrics: dict[str, Any], out_patch: dict[str, Any]) -> None:
+    """Copie dans metrics les infos utiles remontées par patch()."""
+    if "coherence_mutuelle_cours" in out_patch:
+        metrics["coherence_mutuelle_cours"] = out_patch["coherence_mutuelle_cours"]
+        metrics["pourcentage_mesures"] = out_patch["pourcentage_mesures"]
+        metrics["nb_mesures_M"] = out_patch["nb_mesures_M"]
+    if out_patch.get("s_cosamp_utilise") is not None:
+        metrics["s_cosamp_utilise"] = out_patch["s_cosamp_utilise"]
+    if out_patch.get("cosamp_s_mode") is not None:
+        metrics["cosamp_s_mode"] = out_patch["cosamp_s_mode"]
+    if out_patch.get("time_limit_reached") is not None:
+        metrics["time_limit_reached"] = bool(out_patch["time_limit_reached"])
+        metrics["max_time_s"] = out_patch.get("max_time_s")
+        metrics["nb_patchs_reconstruits"] = out_patch.get("nb_patchs_reconstruits")
+        metrics["nb_patchs_total"] = out_patch.get("nb_patchs_total")
+
+
 def main_backend(params: dict[str, Any]) -> dict[str, Any]:
+    """Traitement backend complet pour une image : patchs, reconstruction, métriques, empreinte."""
     t_wall_debut = time.perf_counter()
     rusage_debut = None
     try:
         rusage_debut = resource.getrusage(resource.RUSAGE_SELF)
     except (OSError, AttributeError):
         pass
+
+    # Paramètres liés à patch() (sinon on reprend les paramètres globaux).
     patch_params = params.get("patch_params") or {}
     patch_B = patch_params.get("B", params["B"])
     patch_nrows = patch_params.get("nrows")
@@ -60,9 +88,7 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
     n1, n2, _, _ = base["meta"]
     image_originale = image_full[:n1, :n2]
 
-    methodes = params["methodes"]
-    if isinstance(methodes, str):
-        methodes = [methodes]
+    methodes = _normaliser_methodes(params["methodes"])
     method_params = params.get("method_params") or {}
 
     images_by_method: dict[str, Any] = {}
@@ -75,7 +101,7 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
         mparams = method_params.get(nom, {})
 
         t0 = time.perf_counter()
-        out = patch(
+        out_patch = patch(
             image_path=params["image_path"],
             B=patch_B,
             nrows=patch_nrows,
@@ -106,11 +132,10 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
         )
         t1 = time.perf_counter()
 
-        reconstructed = out["image_reconstruite"]
-        #reconstructed = apply_bilateral_filter(reconstructed_brut, d=5, sigma_color=50.0, sigma_space=50.0)
+        reconstructed = out_patch["image_reconstruite"]
         images_by_method[nom] = reconstructed
-        if "alphas" in out:
-            alphas_by_method[nom] = out["alphas"]
+        if "alphas" in out_patch:
+            alphas_by_method[nom] = out_patch["alphas"]
 
         # On ne dispose pas encore d'un alpha "global" exposé par patch(),
         # donc on calcule les métriques image + temps ici.
@@ -120,19 +145,7 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
             start=t0,
             end=t1,
         )
-        if "coherence_mutuelle_cours" in out:
-            metrics["coherence_mutuelle_cours"] = out["coherence_mutuelle_cours"]
-            metrics["pourcentage_mesures"] = out["pourcentage_mesures"]
-            metrics["nb_mesures_M"] = out["nb_mesures_M"]
-        if out.get("s_cosamp_utilise") is not None:
-            metrics["s_cosamp_utilise"] = out["s_cosamp_utilise"]
-        if out.get("cosamp_s_mode") is not None:
-            metrics["cosamp_s_mode"] = out["cosamp_s_mode"]
-        if out.get("time_limit_reached") is not None:
-            metrics["time_limit_reached"] = bool(out["time_limit_reached"])
-            metrics["max_time_s"] = out.get("max_time_s")
-            metrics["nb_patchs_reconstruits"] = out.get("nb_patchs_reconstruits")
-            metrics["nb_patchs_total"] = out.get("nb_patchs_total")
+        _ajouter_infos_patch_dans_metrics(metrics, out_patch)
         metrics_by_method[nom] = metrics
 
     resultat: dict[str, Any] = {
@@ -144,6 +157,8 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
         "alphas_by_method": alphas_by_method,
         "n_patches": int(original.shape[1]),
     }
+
+    # Estimation de stockage théorique (fichier source vs données compressées y+Phi).
     if methodes:
         m0 = metrics_by_method.get(methodes[0], {})
         M_val = m0.get("nb_mesures_M")
@@ -158,6 +173,8 @@ def main_backend(params: dict[str, Any]) -> dict[str, Any]:
                 int(M_val),
                 chemin_fichier_source=img_path,
             )
+
+    # Ajout de l'estimation d'empreinte carbone (si activée).
     fusionner_empreinte_dans_resultat(
         resultat,
         params,

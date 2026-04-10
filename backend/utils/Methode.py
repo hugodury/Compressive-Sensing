@@ -20,6 +20,13 @@ from scipy.optimize import linprog
 from backend.utils.Metrics import compute_psnr
 
 
+def _normalize_methodes(methodes: str | list[str]) -> list[str]:
+    """Accepte une méthode (str) ou une liste et renvoie une liste."""
+    if isinstance(methodes, str):
+        return [methodes]
+    return list(methodes)
+
+
 def _soft_threshold(v: np.ndarray, tau: float) -> np.ndarray:
     """Seuillage doux (proximal de la norme L1)."""
     return np.sign(v) * np.maximum(np.abs(v) - tau, 0.0)
@@ -44,6 +51,14 @@ def _deadline_reached(deadline_s: float | None) -> bool:
     return deadline_s is not None and time.perf_counter() >= float(deadline_s)
 
 
+def _deadline_from_kwargs(kwargs: dict[str, object]) -> float | None:
+    """Récupère l'échéance absolue optionnelle passée par l'appelant."""
+    value = kwargs.get("deadline_s")
+    if value is None:
+        return None
+    return float(value)
+
+
 def mp(
     D: np.ndarray,
     x: np.ndarray,
@@ -63,7 +78,7 @@ def mp(
     sur tout le support (étapes 2–3 = coeff. 1D puis résiduel non réorthogonalisé au sous-espace).
     PSNR d’arrêt optionnel si reference_for_psnr + D_recon + seuil.
     """
-    deadline_s = kwargs.get("deadline_s")
+    deadline_s = _deadline_from_kwargs(kwargs)
     D = np.asarray(D, dtype=np.float64)
     x = np.asarray(x, dtype=np.float64)
     _, K = D.shape
@@ -115,7 +130,7 @@ def omp(
     OMP : un atome par tour, mais à chaque fois moindres carrés sur **tout** le support courant
     (résiduel orthogonal à Vect(D_P)) — plus coûteux que MP, meilleure qualité en général.
     """
-    deadline_s = kwargs.get("deadline_s")
+    deadline_s = _deadline_from_kwargs(kwargs)
     D = np.asarray(D, dtype=np.float64)
     x = np.asarray(x, dtype=np.float64)
     _, K = D.shape
@@ -173,7 +188,7 @@ def stomp(
     StOMP : même idée de MC sur le support qu’OMP après sélection, mais plusieurs atomes
     peuvent entrer **en même temps** (seuillage du cours) au lieu d’un seul par itération.
     """
-    deadline_s = kwargs.get("deadline_s")
+    deadline_s = _deadline_from_kwargs(kwargs)
     D = np.asarray(D, dtype=np.float64)
     x = np.asarray(x, dtype=np.float64)
     _, K = D.shape
@@ -237,7 +252,7 @@ def cosamp(
     CoSaMP : besoin d’un entier s (support final). Arrêt classique : ||r|| < epsilon ou max_iter.
     Si reference_for_psnr est fourni avec D_recon et psnr_target_db, arrêt dès PSNR atteint.
     """
-    deadline_s = kwargs.get("deadline_s")
+    deadline_s = _deadline_from_kwargs(kwargs)
     D = np.asarray(D, dtype=np.float64)
     x = np.asarray(x, dtype=np.float64)
     _, K = D.shape
@@ -311,7 +326,7 @@ def irls(
 
     Poids : wᵢ ∝ (|αᵢ|+δ)^{p-2} à chaque itération (W dépend de l’itéré précédent).
     """
-    deadline_s = kwargs.get("deadline_s")
+    deadline_s = _deadline_from_kwargs(kwargs)
     if not (0.0 < p < 1.0):
         raise ValueError(
             "irls : p doit être dans ]0, 1[ (comme au §5.2). Pour la norme L1, utiliser bp ou lp."
@@ -430,7 +445,7 @@ def lasso_ista(
     Résolu par ISTA (gradient + seuillage doux). Utile quand on préfère un
     terme quadratique de fidélité plutôt que l’égalité stricte Aα = y.
     """
-    deadline_s = kwargs.get("deadline_s")
+    deadline_s = _deadline_from_kwargs(kwargs)
     A = np.asarray(A, dtype=np.float64)
     y = np.asarray(y, dtype=np.float64).ravel()
     _, K = A.shape
@@ -476,8 +491,7 @@ def main_methode(
     from backend.Tratement_Image import vectoriser
     from backend.utils.mesure import apply_measurement
 
-    if isinstance(methodes, str):
-        methodes = [methodes]
+    methodes = _normalize_methodes(methodes)
 
     method_params = method_params or {}
     A = Phi @ D

@@ -1,5 +1,11 @@
 """
-Point d’entrée : main() lance une reco, run_pipeline() enchaîne reco / sauvegarde / CSV §6 / graphe.
+Fichier d'entrée du projet.
+
+- `main()` : lance une reconstruction unique.
+- `run_pipeline()` : enchaîne des étapes (reconstruct/save/tableaux/graphique).
+
+Objectif de cette version : garder les mêmes fonctionnalités,
+mais avec une structure plus simple à lire.
 """
 
 from __future__ import annotations
@@ -22,6 +28,27 @@ from backend.utils.empreinte import (
 
 from backend.main_backend import main_backend
 from backend.utils.save import save_results
+
+
+def _ratio_vers_nb_mesures_par_patch(ratio: float, n: int) -> int:
+    """Convertit un ratio (fraction ou %) en M (nombre de mesures)."""
+    rf = float(ratio)
+    if rf <= 0.0:
+        raise ValueError("ratio doit être > 0.")
+    if rf > 100.0:
+        raise ValueError(
+            "ratio : utiliser une fraction dans ]0, 1] (ex. 0.25) ou un pourcentage dans ]0, 100] (ex. 25)."
+        )
+    if rf <= 1.0:
+        return max(1, math.ceil(rf * n))
+    return max(1, math.ceil((rf / 100.0) * n))
+
+
+def _normaliser_methodes(methodes: str | list[str]) -> list[str]:
+    """Accepte une méthode str ou une liste, et renvoie toujours une liste."""
+    if isinstance(methodes, str):
+        return [methodes]
+    return list(methodes)
 
 
 def setupParam(
@@ -47,27 +74,13 @@ def setupParam(
     post_filter_sigma_color: float = 75.0,
     post_filter_sigma_space: float = 75.0,
 ) -> dict[str, Any]:
+    """Prépare le dictionnaire de paramètres pour le backend."""
     if block_size <= 0:
         raise ValueError("block_size doit être > 0.")
 
-    rf = float(ratio)
-    if rf <= 0.0:
-        raise ValueError("ratio doit être > 0.")
-    if rf <= 1.0:
-        pass
-    elif rf <= 100.0:
-        pass
-    else:
-        raise ValueError("ratio : utiliser une fraction dans ]0, 1] (ex. 0.25) ou un pourcentage dans ]0, 100] (ex. 25).")
-
     n = block_size * block_size
-    if rf <= 1.0:
-        m = max(1, math.ceil(rf * n))
-    else:
-        m = max(1, math.ceil((rf / 100.0) * n))
-
-    if isinstance(methodes, str):
-        methodes = [methodes]
+    m = _ratio_vers_nb_mesures_par_patch(ratio, n)
+    methodes_norm = _normaliser_methodes(methodes)
 
     if n_atoms is None:
         n_atoms = n
@@ -78,7 +91,7 @@ def setupParam(
         "ratio": ratio,
         "N": n,
         "M": m,
-        "methodes": methodes,
+        "methodes": methodes_norm,
         "dictionary_type": dictionary_type,
         "measurement_mode": measurement_mode,
         "output_path": output_path,
@@ -122,6 +135,7 @@ def main(
     post_filter_sigma_color: float = 75.0,
     post_filter_sigma_space: float = 75.0,
 ) -> dict[str, Any]:
+    """Fonction principale : prépare les paramètres puis lance le backend."""
     params = setupParam(
         image_path=image_path,
         block_size=block_size,
@@ -179,6 +193,7 @@ def run_coarse_best_search(
 
     for phi in measurement_modes:
         for ratio in ratios:
+            # Paramètres de base pour un essai (phi, ratio), avec toutes les méthodes.
             p = setupParam(
                 image_path=str(base_params["image_path"]),
                 block_size=int(base_params["B"]),
@@ -198,6 +213,7 @@ def run_coarse_best_search(
                 empreinte_puissance_w=float(base_params.get("empreinte_puissance_w", 45.0)),
                 empreinte_g_co2_par_kwh=float(base_params.get("empreinte_g_co2_par_kwh", 85.0)),
             )
+            # On limite le nombre de patchs pour garder un balayage raisonnable en temps.
             pp = copy.deepcopy(pp_base)
             pp["max_patches"] = int(max_patches_cap)
             pp["mode_phi"] = phi
@@ -236,6 +252,7 @@ def run_pipeline(
     etapes : tuple ou chaîne "reconstruct,save,tableaux_s6,sweep_graph".
     sweep_ratios : pourcentages ou fractions comme ailleurs (ex. 15, 25 ou 0.25, 0.5).
     """
+    # L'utilisateur peut passer "reconstruct,save" ou ["reconstruct", "save"].
     if isinstance(etapes, str):
         etapes_list = [e.strip() for e in etapes.split(",") if e.strip()]
     else:
@@ -291,6 +308,7 @@ def run_pipeline(
             params, list(sweep_ratios), output_path=out_path
         )
 
+    # Estimation d'empreinte sur toute la session.
     if params.get("empreinte_carbone", True):
         wall = time.perf_counter() - t_pipe
         cpu = cpu_process_delta_depuis(ru_pipe)
@@ -311,6 +329,7 @@ def run_pipeline(
 
 
 def _parse_sweep_ratios(s: str) -> list[float]:
+    """Parse une chaîne CSV de ratios (ex. '15,25,50') vers une liste de float."""
     out: list[float] = []
     for part in s.split(","):
         part = part.strip()
@@ -335,6 +354,7 @@ if __name__ == "__main__":
     parser.add_argument("--max-patches", type=int, default=None, help="Limite de patchs (tests rapides)")
     args, _unknown = parser.parse_known_args()
 
+    # Réglages CLI par défaut (identiques à avant).
     IMAGE_TEST = args.image
     DOSSIER_SORTIE = "Data/Result"
     METHODES_A_TESTER = ["mp", "omp", "stomp", "cosamp"]
@@ -370,6 +390,7 @@ if __name__ == "__main__":
             sweep_ratios=ratios if "sweep_graph" in etapes_tokens else None,
             tableaux_avec_erreurs=not args.no_tableaux_erreurs,
         )
+        # Affichage console compact des résultats de reconstruction.
         if "reconstruction" in tout:
             r = tout["reconstruction"]
             print(f"--- OK : {IMAGE_TEST} ---")

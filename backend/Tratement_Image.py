@@ -14,6 +14,64 @@ import numpy as np
 from PIL import Image
 import cv2
 
+
+def _compute_deadline(max_time_s: float | None) -> float | None:
+    """Convertit une limite (s) en échéance absolue."""
+    if max_time_s is None or max_time_s <= 0.0:
+        return None
+    return time.perf_counter() + float(max_time_s)
+
+
+def _set_timeout_partial_output(
+    out: dict[str, Any],
+    *,
+    shape: tuple[int, int],
+    nb_total_patchs: int,
+    max_time_s: float | None,
+) -> None:
+    """Remplit `out` pour le cas où la limite de temps est atteinte avant reconstruction."""
+    out["image_reconstruite"] = np.zeros(shape, dtype=np.float64)
+    out["reconstruction_partielle"] = True
+    out["nb_patchs_reconstruits"] = 0
+    out["nb_patchs_total"] = int(nb_total_patchs)
+    out["time_limit_reached"] = True
+    out["max_time_s"] = float(max_time_s if max_time_s is not None else 0.0)
+
+
+def _select_solver(method_norm: str):
+    """Associe un nom de méthode à la fonction solveur correspondante."""
+    from backend.utils.Methode import (
+        basis_pursuit,
+        cosamp,
+        irls,
+        lasso_ista,
+        lp,
+        mp,
+        omp,
+        stomp,
+    )
+
+    if method_norm == "mp":
+        return mp
+    if method_norm == "omp":
+        return omp
+    if method_norm == "stomp":
+        return stomp
+    if method_norm == "cosamp":
+        return cosamp
+    if method_norm in ("irls", "irls_lp", "irls_p"):
+        return irls
+    if method_norm in ("bp", "basis_pursuit"):
+        return basis_pursuit
+    if method_norm == "lp":
+        return lp
+    if method_norm in ("lasso", "lasso_ista"):
+        return lasso_ista
+    raise ValueError(
+        "method doit être parmi : mp, omp, stomp, cosamp, irls, irls_lp, bp, lp, lasso."
+    )
+
+
 def load_grayscale_matrix(path: str, dtype: type = np.float64) -> np.ndarray:
     """Charge l'image et renvoie une matrice 2D de niveaux de gris."""
     im = Image.open(path)
@@ -181,8 +239,7 @@ def patch(
     `dictionary_train_image_path` (sujet §7) : pour mixte / K-SVD, apprend ou initialise `D` à partir des patchs
     de cette image ; la reconstruction utilise toujours les patchs de `image_path`.
     """
-    t_start = time.perf_counter()
-    deadline_s = (t_start + float(max_time_s)) if (max_time_s is not None and max_time_s > 0.0) else None
+    deadline_s = _compute_deadline(max_time_s)
 
     # 1) Découpage : on lit l'image sous forme de matrice 2D puis on découpe en blocs.
     X = load_grayscale_matrix(image_path)
@@ -218,12 +275,12 @@ def patch(
     if ratio is None and M is None and Phi is None:
         return out if as_dict else out["matrice_patchs"]
     if deadline_s is not None and time.perf_counter() >= deadline_s:
-        out["image_reconstruite"] = np.zeros((meta[0], meta[1]), dtype=np.float64)
-        out["reconstruction_partielle"] = True
-        out["nb_patchs_reconstruits"] = 0
-        out["nb_patchs_total"] = int(matrice_patchs.shape[1])
-        out["time_limit_reached"] = True
-        out["max_time_s"] = float(max_time_s if max_time_s is not None else 0.0)
+        _set_timeout_partial_output(
+            out,
+            shape=(meta[0], meta[1]),
+            nb_total_patchs=int(matrice_patchs.shape[1]),
+            max_time_s=max_time_s,
+        )
         return out if as_dict else out["image_reconstruite"]
 
     # --- Reconstruction (decoder BCS) ---
@@ -232,16 +289,6 @@ def patch(
         apply_measurement,
         compute_coherence_cours_phi_d,
         generate_measurement_matrix,
-    )
-    from backend.utils.Methode import (
-        basis_pursuit,
-        cosamp,
-        irls,
-        lasso_ista,
-        lp,
-        mp,
-        omp,
-        stomp,
     )
     from backend.utils.Dictionnaire import (
         build_dct_dictionary,
@@ -362,26 +409,7 @@ def patch(
         )
 
     method_norm = meth
-    if method_norm == "mp":
-        solver = mp
-    elif method_norm == "omp":
-        solver = omp
-    elif method_norm == "stomp":
-        solver = stomp
-    elif method_norm == "cosamp":
-        solver = cosamp
-    elif method_norm in ("irls", "irls_lp", "irls_p"):
-        solver = irls
-    elif method_norm in ("bp", "basis_pursuit"):
-        solver = basis_pursuit
-    elif method_norm == "lp":
-        solver = lp
-    elif method_norm in ("lasso", "lasso_ista"):
-        solver = lasso_ista
-    else:
-        raise ValueError(
-            "method doit être parmi : mp, omp, stomp, cosamp, irls, irls_lp, bp, lp, lasso."
-        )
+    solver = _select_solver(method_norm)
 
     alphas_list: list[np.ndarray] = []  # accumulateur pour le diagramme de parcimonie
     time_limit_reached = False
