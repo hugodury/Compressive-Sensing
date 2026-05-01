@@ -445,12 +445,12 @@ def build_metrics_figure(metrics_by_method: dict[str, dict[str, Any]]) -> Figure
 
     ax2.bar(methods_lbl, mse, color=color_mse, edgecolor="#115e59", linewidth=0.9, alpha=0.92, zorder=2)
     ax2.set_title("MSE (plus bas = mieux)", fontsize=12, fontweight="bold", color="#1e293b", pad=10)
-    ax2.set_ylabel("Erreur quadratique moyenne", fontsize=11)
+    ax2.set_ylabel("MSE", fontsize=11)
     ax2.tick_params(axis="x", rotation=28)
     ax2.grid(axis="y", linestyle="--", alpha=0.45, color="#94a3b8", zorder=0)
     ax2.set_axisbelow(True)
 
-    fig.subplots_adjust(top=0.88, bottom=0.20, left=0.09, right=0.98, wspace=0.30)
+    fig.subplots_adjust(top=0.88, bottom=0.20, left=0.09, right=0.97, wspace=0.42)
     return fig
 
 

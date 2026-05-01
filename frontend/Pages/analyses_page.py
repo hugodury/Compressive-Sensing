@@ -6,6 +6,7 @@ aperçus graphiques et estimation CO₂ de session.
 from __future__ import annotations
 
 import csv
+import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
@@ -145,9 +146,12 @@ class AnalysesPage(BasePage):
             r, c = divmod(i, 2)
             ttk.Checkbutton(mg, text=caption, variable=var).grid(row=r, column=c, sticky="w", padx=4, pady=3)
 
-        ttk.Button(grid_sw, text="Lancer le sweep", style="Primary.TButton", command=self.run_sweep).grid(
-            row=10, column=0, columnspan=2, sticky="ew", pady=(14, 0)
-        )
+        self._btn_sweep = ttk.Button(grid_sw, text="Lancer le sweep", style="Primary.TButton", command=self.run_sweep)
+        self._btn_sweep.grid(row=10, column=0, columnspan=2, sticky="ew", pady=(14, 0))
+        self._sweep_progressbar = ttk.Progressbar(grid_sw, mode="indeterminate", length=200)
+        self._sweep_progressbar.grid(row=11, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        self._sweep_status = ttk.Label(grid_sw, text="", style="Muted.TLabel", anchor="center")
+        self._sweep_status.grid(row=12, column=0, columnspan=2, sticky="ew")
         grid_sw.columnconfigure(1, weight=1)
 
         lf6 = ttk.LabelFrame(self, text=" Tableaux — M(P), cohérence mutuelle, erreurs relatives ", padding=14)
@@ -308,12 +312,28 @@ class AnalysesPage(BasePage):
         main, detail = format_empreinte_pour_ui(emp)
         self.emp_line.configure(text=f"CO₂eq (dernière analyse sur cet onglet) : {main} — {detail}")
 
-    def run_sweep(self) -> None:
-        try:
-            methods = [m for m, v in self.method_vars.items() if v.get()]
-            if not methods:
-                raise ValueError("Sélectionnez au moins une méthode.")
+    def _set_sweep_busy(self, msg: str = "Sweep en cours…") -> None:
+        if hasattr(self, "_btn_sweep") and self._btn_sweep is not None:
+            self._btn_sweep.configure(state="disabled")
+        if hasattr(self, "_sweep_progressbar") and self._sweep_progressbar is not None:
+            self._sweep_progressbar.start(12)
+        if hasattr(self, "_sweep_status") and self._sweep_status is not None:
+            self._sweep_status.configure(text=msg)
 
+    def _set_sweep_idle(self, msg: str = "") -> None:
+        if hasattr(self, "_sweep_progressbar") and self._sweep_progressbar is not None:
+            self._sweep_progressbar.stop()
+        if hasattr(self, "_btn_sweep") and self._btn_sweep is not None:
+            self._btn_sweep.configure(state="normal")
+        if hasattr(self, "_sweep_status") and self._sweep_status is not None:
+            self._sweep_status.configure(text=msg)
+
+    def run_sweep(self) -> None:
+        methods = [m for m, v in self.method_vars.items() if v.get()]
+        if not methods:
+            messagebox.showerror("Erreur", "Sélectionnez au moins une méthode.")
+            return
+        try:
             params = setupParam(
                 image_path=self.vars_sweep["image_path"].get().strip(),
                 block_size=int(self.vars_sweep["block_size"].get()),
@@ -328,20 +348,37 @@ class AnalysesPage(BasePage):
                 empreinte_puissance_w=float(self.vars_sweep["empreinte_w"].get().replace(",", ".") or 45),
                 empreinte_g_co2_par_kwh=float(self.vars_sweep["empreinte_g"].get().replace(",", ".") or 85),
             )
-            out = run_pipeline(
-                params,
-                etapes=("sweep_graph",),
-                sweep_ratios=parse_float_list(self.vars_sweep["ratios"].get()),
-            )
-            self.state.last_sweep = out["sweep_graphique"]
-            self.state.last_analyses_empreinte = out.get("empreinte_session")
-            self.state.add_log("Sweep PSNR terminé (onglet Analyses)")
-            self._refresh_empreinte_line()
-            self.refresh()
-            self.view_nb.select(self._TAB_SWEEP_GRAPH)
-            messagebox.showinfo("Succès", "Sweep terminé — voir l’onglet « Graphique sweep ».")
+            ratios = parse_float_list(self.vars_sweep["ratios"].get())
         except Exception as exc:
             messagebox.showerror("Erreur", str(exc))
+            return
+
+        label = ", ".join(m.upper() for m in methods)
+        self._set_sweep_busy(f"Sweep PSNR en cours ({label})…")
+
+        def _worker() -> None:
+            try:
+                out = run_pipeline(params, etapes=("sweep_graph",), sweep_ratios=ratios)
+            except Exception as exc:
+                self.after(0, lambda e=exc: self._on_sweep_error(e))
+                return
+            self.after(0, lambda o=out: self._on_sweep_done(o))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_sweep_error(self, exc: Exception) -> None:
+        self._set_sweep_idle()
+        messagebox.showerror("Erreur sweep", str(exc))
+
+    def _on_sweep_done(self, out: dict) -> None:
+        self.state.last_sweep = out["sweep_graphique"]
+        self.state.last_analyses_empreinte = out.get("empreinte_session")
+        self.state.add_log("Sweep PSNR terminé (onglet Analyses)")
+        self._refresh_empreinte_line()
+        self.refresh()
+        self.view_nb.select(self._TAB_SWEEP_GRAPH)
+        self._set_sweep_idle("Sweep terminé ✔")
+        messagebox.showinfo("Succès", "Sweep terminé — voir l'onglet « Graphique sweep ».")
 
     def generate_tables(self) -> None:
         try:
